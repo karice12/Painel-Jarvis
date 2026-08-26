@@ -1,0 +1,6 @@
+{
+  "name": "OmniJarvis Multi-Tenant SaaS",
+  "description": "Dashboard SaaS Multi-Tenant moderno e ultra-seguro com RBAC, OpenJarvis IA RAG, chat interno setorial, base de conhecimento, agenda, auditoria e white-labeling.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
