@@ -32,6 +32,8 @@ export const AuditLogsModule: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
   const [actionFilter, setActionFilter] = useState<string>("all");
 
+  const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
+
   const loadLogs = useCallback(async () => {
     setIsLoading(true);
     const tenantId = user?.tenantId || "tenant_omni_01";
@@ -56,6 +58,25 @@ export const AuditLogsModule: React.FC = () => {
       loadLogs();
     }
   }, [isMasterAdmin, loadLogs]);
+
+  // Real-time listener for live audit events dispatched on the client
+  useEffect(() => {
+    const handleNewLog = (event: any) => {
+      const newLog = event.detail;
+      if (newLog) {
+        setLogs((prev) => {
+          // Avoid duplicate by ID
+          if (prev.some((l) => l.id === newLog.id)) return prev;
+          return [newLog, ...prev];
+        });
+      }
+    };
+
+    window.addEventListener("omnijarvis_audit_log_created", handleNewLog);
+    return () => {
+      window.removeEventListener("omnijarvis_audit_log_created", handleNewLog);
+    };
+  }, []);
 
   // RBAC Access Guard: If not master_admin, show restricted access screen
   if (!isMasterAdmin) {
@@ -122,6 +143,8 @@ export const AuditLogsModule: React.FC = () => {
     downloadAnchor.remove();
   };
 
+  const uniqueActions = Array.from(new Set(logs.map((l) => l.action).filter(Boolean)));
+
   return (
     <div className="space-y-6 pb-8">
       {/* Top Banner */}
@@ -137,8 +160,8 @@ export const AuditLogsModule: React.FC = () => {
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-            Histórico imutável de todas as chamadas de IA, autenticações de
-            sessão, uploads de documentos RAG e alterações de privilégios no
+            Histórico imutável e rastreabilidade em tempo real de todas as chamadas de IA, autenticações de
+            sessão, uploads de documentos RAG, interações de chat e alterações de privilégios no
             tenant.
           </p>
         </div>
@@ -200,21 +223,21 @@ export const AuditLogsModule: React.FC = () => {
         >
           <option value="all">Todos os Status</option>
           <option value="success">Apenas Sucesso</option>
-          <option value="failed">Apenas Falhas / Bloqueios</option>
+          <option value="failed">Apenas Bloqueados</option>
         </select>
 
         {/* Action Filter */}
         <select
           value={actionFilter}
           onChange={(e) => setActionFilter(e.target.value)}
-          className="w-full sm:w-48 px-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-200 focus:outline-none"
+          className="w-full sm:w-56 px-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-200 focus:outline-none"
         >
-          <option value="all">Todas as Ações</option>
-          <option value="AUTH_LOGIN_SUCCESS">Login de Usuário</option>
-          <option value="GEMINI_CHAT_PROMPT">Consulta OpenJarvis</option>
-          <option value="RAG_DOC_INDEX">Indexação RAG</option>
-          <option value="CONFIG_UPDATE_WHITELABEL">Alteração Config</option>
-          <option value="UNAUTHORIZED_ACCESS_ATTEMPT">Acesso Não Autorizado</option>
+          <option value="all">Todas as Ações ({uniqueActions.length})</option>
+          {uniqueActions.map((action) => (
+            <option key={action} value={action}>
+              {action}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -222,12 +245,12 @@ export const AuditLogsModule: React.FC = () => {
       <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-mono">
-            <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 text-slate-400 font-sans font-semibold">
+            <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-sans font-semibold">
               <tr>
-                <th className="py-3 px-4">Timestamp (UTC)</th>
+                <th className="py-3 px-4">Data / Hora</th>
                 <th className="py-3 px-4">Usuário</th>
                 <th className="py-3 px-4">Ação Auditada</th>
-                <th className="py-3 px-4">Recurso / Documento</th>
+                <th className="py-3 px-4">Detalhes / Recurso</th>
                 <th className="py-3 px-4">IP Origem</th>
                 <th className="py-3 px-4">Resultado</th>
               </tr>
@@ -236,58 +259,149 @@ export const AuditLogsModule: React.FC = () => {
               {filteredLogs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-slate-400 font-sans">
-                    Nenhum registro de auditoria encontrado.
+                    Nenhum registro de auditoria encontrado para este filtro.
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map((log) => (
-                  <tr
-                    key={log.id}
-                    className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors text-slate-700 dark:text-slate-300"
-                  >
-                    <td className="py-3 px-4 text-slate-400 text-[11px]">
-                      {log.timestamp}
-                    </td>
+                filteredLogs.map((log) => {
+                  let formattedDate = log.timestamp;
+                  try {
+                    formattedDate = new Date(log.timestamp).toLocaleString("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    });
+                  } catch {
+                    formattedDate = log.timestamp;
+                  }
 
-                    <td className="py-3 px-4 font-sans font-semibold text-slate-900 dark:text-white">
-                      <div>{log.userName}</div>
-                      <div className="text-[10px] text-slate-400 font-normal font-mono">
-                        {log.userRole}
-                      </div>
-                    </td>
+                  return (
+                    <tr
+                      key={log.id}
+                      onClick={() => setSelectedLog(log)}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer transition-colors text-slate-700 dark:text-slate-300"
+                    >
+                      <td className="py-3 px-4 text-slate-500 dark:text-slate-400 text-[11px] whitespace-nowrap">
+                        {formattedDate}
+                      </td>
 
-                    <td className="py-3 px-4 text-purple-600 dark:text-purple-400 font-bold text-[11px]">
-                      {log.action}
-                    </td>
+                      <td className="py-3 px-4 font-sans font-semibold text-slate-900 dark:text-white">
+                        <div>{log.userName}</div>
+                        <div className="text-[10px] text-slate-400 font-normal font-mono">
+                          {log.userRole}
+                        </div>
+                      </td>
 
-                    <td className="py-3 px-4 font-sans text-slate-600 dark:text-slate-300 truncate max-w-xs">
-                      {log.resource}
-                    </td>
+                      <td className="py-3 px-4 text-purple-600 dark:text-purple-400 font-bold text-[11px]">
+                        {log.action}
+                      </td>
 
-                    <td className="py-3 px-4 text-slate-400 text-[11px]">
-                      {log.ip}
-                    </td>
+                      <td className="py-3 px-4 font-sans text-slate-600 dark:text-slate-300 truncate max-w-sm" title={log.details || log.resource}>
+                        {log.details || log.resource}
+                      </td>
 
-                    <td className="py-3 px-4 font-sans">
-                      {log.status === "success" ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold">
-                          <CheckCircle2 className="w-3 h-3" />
-                          SUCCESS (200)
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-500 text-[10px] font-semibold">
-                          <XCircle className="w-3 h-3" />
-                          BLOCKED (403)
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                      <td className="py-3 px-4 text-slate-500 dark:text-slate-400 text-[11px]">
+                        {log.ip}
+                      </td>
+
+                      <td className="py-3 px-4 font-sans whitespace-nowrap">
+                        {log.status === "success" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold">
+                            <CheckCircle2 className="w-3 h-3" />
+                            SUCCESS (200)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-500 text-[10px] font-semibold">
+                            <XCircle className="w-3 h-3" />
+                            BLOCKED (403)
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Selected Log Details Modal */}
+      {selectedLog && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-purple-500" />
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                  Detalhes do Registro de Auditoria
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedLog(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">ID:</span>
+                  <span className="font-mono text-slate-700 dark:text-slate-200">{selectedLog.id}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Timestamp:</span>
+                  <span className="font-mono text-slate-700 dark:text-slate-200">{selectedLog.timestamp}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Usuário:</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{selectedLog.userName} ({selectedLog.userRole})</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">IP Origem:</span>
+                  <span className="font-mono text-slate-700 dark:text-slate-200">{selectedLog.ip}</span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold mb-1">Ação Executada:</span>
+                <span className="font-mono text-purple-600 dark:text-purple-400 font-bold bg-purple-500/10 px-2 py-1 rounded-md inline-block">
+                  {selectedLog.action}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold mb-1">Detalhes & Contexto:</span>
+                <p className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-200 font-sans leading-relaxed">
+                  {selectedLog.details || selectedLog.resource}
+                </p>
+              </div>
+
+              {selectedLog.metadata && Object.keys(selectedLog.metadata).length > 0 && (
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold mb-1">Metadados Técnicos:</span>
+                  <pre className="p-3 bg-slate-950 text-emerald-400 rounded-xl font-mono text-[11px] overflow-x-auto">
+                    {JSON.stringify(selectedLog.metadata, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setSelectedLog(null)}
+                className="px-4 py-2 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-xl text-xs font-semibold"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

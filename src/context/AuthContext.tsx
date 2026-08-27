@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { User, TenantConfig, Role } from "../types";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { recordAuditAction } from "../services/auditLogger";
 
 interface AuthContextType {
   user: User | null;
@@ -50,7 +51,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [tenant, setTenant] = useState<TenantConfig | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("omni_theme");
+      if (saved === "light" || saved === "dark") return saved;
+    }
+    return "dark";
+  });
   const [aiConnectionStatus, setAiConnectionStatus] = useState<"connected" | "offline" | "checking">("checking");
   const [aiLatencyMs, setAiLatencyMs] = useState<number>(24);
 
@@ -89,6 +96,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       root.classList.add("dark");
     } else {
       root.classList.remove("dark");
+    }
+    try {
+      localStorage.setItem("omni_theme", theme);
+    } catch {
+      // Ignore storage errors
     }
   }, [theme]);
 
@@ -536,6 +548,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser({ ...user, role: newRole });
       }
 
+      recordAuditAction({
+        action: "USER_ROLE_CHANGED",
+        details: `Papel do usuário ${targetUserId} atualizado para ${newRole}`,
+        resource: targetUserId,
+        user,
+        tenantId: user?.tenantId,
+        metadata: { targetUserId, newRole },
+      });
+
       return { success: true };
     } catch (e: any) {
       console.error("Error updating user role:", e);
@@ -544,13 +565,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const toggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      recordAuditAction({
+        action: "THEME_CHANGED",
+        details: `Tema da interface alterado para o modo ${next === "dark" ? "Escuro" : "Claro"}`,
+        resource: "Interface / UI Theme",
+        user,
+        tenantId: tenant?.id,
+        metadata: { mode: next },
+      });
+      return next;
+    });
   };
 
   const updateTenantConfig = async (config: Partial<TenantConfig>): Promise<boolean> => {
     try {
       const currentTenantId = tenant?.id || "tenant_omni_01";
       
+      recordAuditAction({
+        action: "TENANT_CONFIG_UPDATED",
+        details: `Configuração da empresa atualizada (${Object.keys(config).join(", ")})`,
+        resource: currentTenantId,
+        user,
+        tenantId: currentTenantId,
+        metadata: config,
+      });
+
       // Update in Supabase if configured
       if (isSupabaseConfigured) {
         const { error } = await supabase

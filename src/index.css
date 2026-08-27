@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     --primary-color: #2563eb;
@@ -7,6 +9,10 @@
     --primary-light: #eff6ff;
     --primary-border: #bfdbfe;
     --primary-ring: rgba(37, 99, 235, 0.25);
+  }
+
+  html {
+    color-scheme: light dark;
   }
 
   body {
