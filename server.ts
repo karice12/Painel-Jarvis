@@ -171,10 +171,11 @@ app.post("/api/auth/login", (req, res) => {
 
   if (!user) {
     const cleanEmail = (email || "").trim().toLowerCase() || "admin@workspace.com";
-    const rawName = cleanEmail.split("@")[0].replace(/[._-]/g, " ");
-    const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    const isPelegrino = cleanEmail === "pelegrinokarol@gmail.com" || cleanEmail.includes("pelegrinokarol");
+    const rawName = isPelegrino ? "Pelegrinokarol" : cleanEmail.split("@")[0].replace(/[._-]/g, " ");
+    const formattedName = isPelegrino ? "Pelegrinokarol" : rawName.charAt(0).toUpperCase() + rawName.slice(1);
     const isFirst = DB.users.length === 0;
-    const assignedRole = roleChoice || (isFirst || cleanEmail.includes("master") ? "master_admin" : cleanEmail.includes("admin") ? "admin" : "user");
+    const assignedRole = isPelegrino ? "master_admin" : roleChoice || (isFirst || cleanEmail.includes("master") ? "master_admin" : cleanEmail.includes("admin") ? "admin" : "user");
 
     user = {
       id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -185,11 +186,14 @@ app.post("/api/auth/login", (req, res) => {
       tenantId: "tenant_omni_01",
       tenantName: DB.tenants[0]?.name || "Workspace Corporativo",
       avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      sector: "Tecnologia & Inovação",
+      sector: isPelegrino ? "Diretoria & Tecnologia" : "Tecnologia & Inovação",
       status: "online",
       createdAt: new Date().toISOString(),
     };
     DB.users.push(user);
+  } else if (user && (user.email.toLowerCase() === "pelegrinokarol@gmail.com" || user.email.toLowerCase().includes("pelegrinokarol"))) {
+    user.role = "master_admin";
+    if (user.name === "Colaborador" || !user.name) user.name = "Pelegrinokarol";
   }
 
   const tenant =
@@ -246,8 +250,9 @@ app.post("/api/auth/magic-link", (req, res) => {
 
   let user = DB.users.find((u) => u.email.toLowerCase() === cleanEmail);
   if (!user) {
-    const rawName = cleanEmail ? cleanEmail.split("@")[0].replace(/[._-]/g, " ") : "Colaborador";
-    const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    const isPelegrino = cleanEmail === "pelegrinokarol@gmail.com" || cleanEmail.includes("pelegrinokarol");
+    const rawName = isPelegrino ? "Pelegrinokarol" : cleanEmail ? cleanEmail.split("@")[0].replace(/[._-]/g, " ") : "Colaborador";
+    const formattedName = isPelegrino ? "Pelegrinokarol" : rawName.charAt(0).toUpperCase() + rawName.slice(1);
     const isFirst = DB.users.length === 0;
 
     user = {
@@ -255,15 +260,18 @@ app.post("/api/auth/magic-link", (req, res) => {
       name: formattedName || "Colaborador",
       email: cleanEmail || "colaborador@workspace.com",
       password: "password123",
-      role: isFirst ? "master_admin" : "user",
+      role: isPelegrino || isFirst ? "master_admin" : "user",
       tenantId: "tenant_omni_01",
       tenantName: DB.tenants[0]?.name || "Workspace Corporativo",
       avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      sector: "Tecnologia & Inovação",
+      sector: isPelegrino ? "Diretoria & Tecnologia" : "Tecnologia & Inovação",
       status: "online",
       createdAt: new Date().toISOString(),
     };
     DB.users.push(user);
+  } else if (user && (user.email.toLowerCase() === "pelegrinokarol@gmail.com" || user.email.toLowerCase().includes("pelegrinokarol"))) {
+    user.role = "master_admin";
+    if (user.name === "Colaborador" || !user.name) user.name = "Pelegrinokarol";
   }
 
   const tenant =
@@ -378,16 +386,17 @@ app.post("/api/auth/register", (req, res) => {
   }
 
   const selectedTenant = DB.tenants.find((t) => t.id === (tenantId || "tenant_omni_01")) || DB.tenants[0];
+  const isPelegrino = email.toLowerCase() === "pelegrinokarol@gmail.com" || email.toLowerCase().includes("pelegrinokarol");
   const newUser = {
     id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-    name: name || email.split("@")[0],
+    name: isPelegrino ? "Pelegrinokarol" : (name || email.split("@")[0]),
     email,
     password: password || "password123",
-    role: "user" as const,
+    role: (isPelegrino ? "master_admin" : "user") as "master_admin" | "admin" | "user",
     tenantId: selectedTenant.id,
     tenantName: selectedTenant.name,
-    avatar: `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 50000)}?w=150&auto=format&fit=crop&q=80`,
-    sector: sector || "Tecnologia & Inovação",
+    avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
+    sector: isPelegrino ? "Diretoria & Tecnologia" : (sector || "Tecnologia & Inovação"),
     status: "online" as const,
     createdAt: new Date().toISOString(),
   };

@@ -72,21 +72,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const createFallbackUserProfile = useCallback((userId: string, userEmail: string, userMetadata?: any): User => {
     const rawName = userMetadata?.name || userMetadata?.full_name || (userEmail ? userEmail.split("@")[0] : "Colaborador");
     const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-    const fallbackRole: Role = userEmail.includes("master")
+    const lowerEmail = (userEmail || "").toLowerCase();
+    const isPelegrino = lowerEmail === "pelegrinokarol@gmail.com" || lowerEmail.includes("pelegrinokarol") || rawName.toLowerCase().includes("pelegrinokarol");
+    
+    const fallbackRole: Role = isPelegrino || lowerEmail.includes("master")
       ? "master_admin"
-      : userEmail.includes("admin")
+      : lowerEmail.includes("admin")
       ? "admin"
       : "user";
 
     return {
       id: userId || "usr_fallback_" + Math.random().toString(36).substring(2, 9),
-      name: formattedName || "Colaborador",
+      name: isPelegrino ? "Pelegrinokarol" : (formattedName || "Colaborador"),
       email: userEmail || "colaborador@workspace.com",
       role: fallbackRole,
       tenantId: "tenant_omni_01",
       tenantName: DEFAULT_FALLBACK_TENANT.name,
       avatar: userMetadata?.avatar_url || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
-      sector: userMetadata?.sector || "Tecnologia & Inovação",
+      sector: isPelegrino ? "Diretoria & Tecnologia" : (userMetadata?.sector || "Tecnologia & Inovação"),
       status: "online",
       createdAt: new Date().toISOString(),
     };
@@ -185,16 +188,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               console.warn("Could not query tenant, using default fallback:", tErr);
             }
 
-            const rawName = profile.name || profile.full_name || userMetadata?.name || userMetadata?.full_name || (userEmail ? userEmail.split("@")[0] : "Colaborador");
+            const effectiveEmail = profile.email || userEmail;
+            const isPelegrino = effectiveEmail?.toLowerCase() === "pelegrinokarol@gmail.com" || effectiveEmail?.toLowerCase().includes("pelegrinokarol");
+            const rawName = isPelegrino ? "Pelegrinokarol" : (profile.name || profile.full_name || userMetadata?.name || userMetadata?.full_name || (userEmail ? userEmail.split("@")[0] : "Colaborador"));
             setUser({
               id: profile.id,
               name: rawName || "Colaborador",
-              email: profile.email || userEmail,
-              role: (profile.role as Role) || "user",
+              email: effectiveEmail,
+              role: isPelegrino ? "master_admin" : ((profile.role as Role) || "user"),
               tenantId: tenantId,
               tenantName: loadedTenant.name,
               avatar: profile.avatar_url || userMetadata?.avatar_url || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
-              sector: profile.sector || userMetadata?.sector || "Tecnologia & Inovação",
+              sector: isPelegrino ? "Diretoria & Tecnologia" : (profile.sector || userMetadata?.sector || "Tecnologia & Inovação"),
               status: profile.status || "online",
               createdAt: profile.created_at || new Date().toISOString(),
             });
@@ -434,15 +439,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = async (email: string, password: string, name: string, sector: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
     try {
+      const isPelegrino = email.toLowerCase() === "pelegrinokarol@gmail.com" || email.toLowerCase().includes("pelegrinokarol");
+      const assignedRole: Role = isPelegrino ? "master_admin" : "user";
+      const assignedName = isPelegrino ? "Pelegrinokarol" : name;
+      const assignedSector = isPelegrino ? "Diretoria & Tecnologia" : sector;
+
       if (isSupabaseConfigured) {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: {
-              name,
-              sector,
-              role: "user",
+              name: assignedName,
+              sector: assignedSector,
+              role: assignedRole,
             },
           },
         });
@@ -457,16 +467,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await supabase.from("profiles").upsert({
             id: data.user.id,
             email,
-            name,
-            sector,
-            role: "user",
+            name: assignedName,
+            sector: assignedSector,
+            role: assignedRole,
             tenant_id: "tenant_omni_01",
           });
 
           if (data.session) {
             setToken(data.session.access_token);
             localStorage.setItem("omni_jwt_token", data.session.access_token);
-            await loadProfileAndTenant(data.user.id, email, { name, sector }, data.session.access_token);
+            await loadProfileAndTenant(data.user.id, email, { name: assignedName, sector: assignedSector }, data.session.access_token);
           }
           setIsLoading(false);
           return { success: true };
@@ -477,7 +487,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name, sector }),
+        body: JSON.stringify({ email, password, name: assignedName, sector: assignedSector }),
       });
 
       if (res.ok) {
