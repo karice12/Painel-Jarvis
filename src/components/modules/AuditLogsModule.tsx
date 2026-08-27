@@ -37,52 +37,19 @@ export const AuditLogsModule: React.FC = () => {
     const tenantId = user?.tenantId || "tenant_omni_01";
 
     try {
-      // 1. Try fetching directly from Supabase
       const dbLogs = await getAuditLogsFromDb(tenantId);
       if (dbLogs && dbLogs.length > 0) {
         setLogs(dbLogs);
-        setIsLoading(false);
-        return;
-      }
-
-      // 2. Fallback to server API
-      const res = await fetch(`/api/audit-logs?tenantId=${encodeURIComponent(tenantId)}`, {
-        headers: {
-          "x-user-role": user?.role || "master_admin",
-        },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.logs) {
-          setLogs(
-            data.logs.map((l: any) => ({
-              id: l.id,
-              userId: l.userId || "usr_anon",
-              userName: l.userName || "Colaborador",
-              userRole: l.userRole || "user",
-              action: l.action || "SYSTEM_EVENT",
-              resource: l.details || l.resource || "Sistema",
-              ip: l.ipAddress || l.ip || "127.0.0.1",
-              userAgent: "OmniJarvis Gateway",
-              timestamp: l.timestamp || new Date().toISOString(),
-              status: l.status === "denied" || l.status === "failed" ? "failed" : "success",
-              metadata: l.metadata || {},
-            }))
-          );
-        } else {
-          setLogs([]);
-        }
       } else {
         setLogs([]);
       }
     } catch (err) {
-      console.warn("Could not load real audit logs:", err);
+      console.error("Erro ao carregar logs:", err);
       setLogs([]);
     } finally {
       setIsLoading(false);
     }
-  }, [user?.tenantId, user?.role]);
+  }, [user?.tenantId]);
 
   useEffect(() => {
     if (isMasterAdmin) {
@@ -114,11 +81,11 @@ export const AuditLogsModule: React.FC = () => {
   }
 
   const filteredLogs = logs.filter((log) => {
-    const matchesSearch =
-      log.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.resource.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.ip.includes(searchQuery);
+   const matchesSearch =
+      (log.userName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.action || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.resource || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.ip || "").includes(searchQuery);
 
     const matchesStatus = statusFilter === "all" || log.status === statusFilter;
     const matchesAction = actionFilter === "all" || log.action === actionFilter;
