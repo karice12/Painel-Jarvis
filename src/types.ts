@@ -106,6 +106,8 @@ export interface MessageAttachment {
   size: string;
   type: string;
   url?: string;
+  dataUrl?: string;
+  fileType?: string;
 }
 
 export interface InternalMessage {

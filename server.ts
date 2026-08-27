@@ -267,6 +267,29 @@ const DB: DBStructure = {
       reactions: { "👍": ["usr_master_01"] },
       tenantId: "tenant_omni_01",
     },
+    {
+      id: "msg_chat_03",
+      channelId: "chan_geral",
+      senderId: "usr_master_01",
+      senderName: "Karice Pelegrino",
+      senderAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      senderRole: "master_admin",
+      senderSector: "Tecnologia & Inovação",
+      text: "Arquivo compartilhado: Gemini-Generated-Image-z73n9rz73n9rz73n.jpg",
+      timestamp: new Date(Date.now() - 3600000 * 1).toISOString(),
+      attachments: [
+        {
+          id: "att_01",
+          name: "Gemini-Generated-Image-z73n9rz73n9rz73n.jpg",
+          size: "186 KB",
+          type: "image",
+          fileType: "jpg",
+          url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80",
+        },
+      ],
+      reactions: { "👍": ["usr_admin_01"], "❤️": ["usr_master_01"], "🚀": ["usr_user_01"], "👏": ["usr_user_02"] },
+      tenantId: "tenant_omni_01",
+    },
   ],
   chatChannels: [
     {
