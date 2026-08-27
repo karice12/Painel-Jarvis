@@ -59,7 +59,7 @@ export async function getRealDashboardMetrics(
       .maybeSingle();
 
     const requestLimit = tenantData?.monthly_request_limit || 10000;
-    const storageLimitGb = tenantData?.storage_limit_gb || 10;
+    const storageLimitGb = tenantData?.storage_limit_gb || 30;
 
     // 2. Fetch specific tenant_metrics record if available
     const { data: metricRecord } = await supabase

@@ -241,35 +241,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </div>
 
-      {/* Quota / API Limit Tracker Mini-Card */}
-      {!isCollapsed && (
-        <div className="p-3 mx-3 mb-3 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 text-white border border-slate-800 shadow-sm">
-          <div className="flex items-center justify-between text-xs mb-1.5">
-            <span className="flex items-center gap-1.5 font-medium text-slate-300">
-              <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
-              Uso da API de IA
-            </span>
-            <span className="text-[11px] text-slate-400">
-              {tenant ? Math.min(100, Math.round(((tenant.currentRequests || 0) / (tenant.monthlyRequestLimit || 10000)) * 100)) : 0}%
-            </span>
-          </div>
-
-          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-2">
-            <div
-              className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500"
-              style={{
-                width: `${tenant ? Math.min(100, ((tenant.currentRequests || 0) / (tenant.monthlyRequestLimit || 10000)) * 100) : 0}%`,
-              }}
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-[10px] text-slate-400">
-            <span>{(tenant?.currentRequests || 0).toLocaleString()} reqs</span>
-            <span>Limite: {(tenant?.monthlyRequestLimit || 10000).toLocaleString()}</span>
-          </div>
-        </div>
-      )}
-
       {/* Current User Profile Footer */}
       <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center gap-3">
         <div className="relative flex-shrink-0">
