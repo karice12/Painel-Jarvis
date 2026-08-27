@@ -1347,24 +1347,38 @@ app.post("/api/tenant/config", (req, res) => {
 app.get("/api/users", (req, res) => {
   const { tenantId = "tenant_omni_01" } = req.query;
   const members = DB.users
-    .filter((u) => u.tenantId === tenantId)
+    .filter((u) => !tenantId || u.tenantId === tenantId)
     .map(({ password, ...rest }) => rest);
   res.json({ users: members });
 });
 
-app.post("/api/users/invite", (req, res) => {
-  const { name, email, role, sector, tenantId } = req.body;
+app.post(["/api/users", "/api/users/invite"], (req, res) => {
+  const { name, email, role, sector, tenantId, tenantName, status, avatar } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "E-mail corporativo obrigatório" });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const existing = DB.users.find((u) => u.email.toLowerCase() === cleanEmail);
+  if (existing) {
+    return res.status(400).json({ error: `O e-mail '${cleanEmail}' já está cadastrado neste workspace.` });
+  }
+
+  const tenant = DB.tenants.find((t) => t.id === (tenantId || "tenant_omni_01")) || DB.tenants[0];
+
   const newUser = {
-    id: `usr_${Date.now()}`,
-    name: name || "Novo Colaborador",
-    email: email || `user_${Date.now()}@nexus.com.br`,
+    id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+    name: name || cleanEmail.split("@")[0],
+    email: cleanEmail,
     password: "password123",
-    role: role || "user",
-    tenantId: tenantId || "tenant_omni_01",
-    tenantName: "Nexus Enterprise S.A.",
-    avatar: `https://images.unsplash.com/photo-${1500000000000 + Math.floor(Math.random() * 90000000)}?w=150&auto=format&fit=crop&q=80`,
+    role: (role as any) || "user",
+    tenantId: tenant.id,
+    tenantName: tenantName || tenant.name,
+    avatar:
+      avatar ||
+      `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 50000)}?w=150&auto=format&fit=crop&q=80`,
     sector: sector || "Tecnologia & Inovação",
-    status: "online" as const,
+    status: (status as any) || "online",
     createdAt: new Date().toISOString(),
   };
 
@@ -1372,13 +1386,14 @@ app.post("/api/users/invite", (req, res) => {
 
   recordAuditLog(
     "usr_master_01",
-    "Rodrigo Alencar",
-    "rodrigo.master@nexus.com.br",
+    "Karice Pelegrino",
+    "karice.pelegrinosilva@gmail.com",
     "master_admin",
     "USER_MEMBER_INVITED",
-    `Novo usuário '${newUser.name}' (${newUser.email}) cadastrado com a role '${newUser.role}'`,
-    tenantId || "tenant_omni_01",
-    "success"
+    `Novo usuário '${newUser.name}' (${newUser.email}) cadastrado com a role '${newUser.role}' no setor '${newUser.sector}'`,
+    tenant.id,
+    "success",
+    req.ip || "127.0.0.1"
   );
 
   const { password, ...safeUser } = newUser;
