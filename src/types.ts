@@ -21,6 +21,8 @@ export interface User {
   avatar?: string;
   sector: string; // e.g. 'Tecnologia & Inovação', 'Financeiro', 'Suporte', 'Marketing', 'Diretoria'
   status: UserStatus;
+  needsPasswordChange?: boolean;
+  temporaryPassword?: string;
   createdAt: string;
 }
 

@@ -16,11 +16,16 @@ import {
   UserCheck,
   AlertCircle,
   XCircle,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Copy,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { TenantConfig, Role } from "../../types";
+import { TenantConfig, Role, User } from "../../types";
 import { cn } from "../../lib/utils";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { AdminResetPasswordModal } from "./AdminResetPasswordModal";
 
 export const SettingsModule: React.FC = () => {
   const { tenant, updateTenantConfig, canManageTenant, updateUserRole, user: currentUser } = useAuth();
@@ -49,9 +54,11 @@ export const SettingsModule: React.FC = () => {
   const [inviteStatus, setInviteStatus] = useState<{
     type: "success" | "error" | "info";
     message: string;
+    temporaryPassword?: string;
   } | null>(null);
   const [isInviting, setIsInviting] = useState(false);
   const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null);
+  const [memberToResetPassword, setMemberToResetPassword] = useState<User | null>(null);
 
   const fetchMembers = async () => {
     try {
@@ -78,6 +85,10 @@ export const SettingsModule: React.FC = () => {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("user");
   const [inviteSector, setInviteSector] = useState("Tecnologia & Inovação");
+  const [inviteCustomPassword, setInviteCustomPassword] = useState("");
+  const [autoGenPassword, setAutoGenPassword] = useState(true);
+  const [showInvitePass, setShowInvitePass] = useState(false);
+  const [copiedTempPass, setCopiedTempPass] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -208,6 +219,7 @@ export const SettingsModule: React.FC = () => {
           tenantId: tenant?.id || "tenant_omni_01",
           tenantName: tenant?.name || "Nexus Enterprise",
           status: "online",
+          password: autoGenPassword ? undefined : inviteCustomPassword,
         }),
       });
 
@@ -216,22 +228,23 @@ export const SettingsModule: React.FC = () => {
         if (data.user) {
           setMembers((prev) => [...prev.filter((m) => m.email.toLowerCase() !== trimmedEmail), data.user]);
         }
+        
+        const tempPass = data.temporaryPassword || data.user?.temporaryPassword;
+
+        setInviteStatus({
+          type: "success",
+          message: `Colaborador ${trimmedName} convidado com sucesso! Foi gerada uma senha provisória de acesso. No primeiro login, o colaborador será solicitado a cadastrar a senha definitiva.`,
+          temporaryPassword: tempPass,
+        });
       } else {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || "Falha ao cadastrar membro no backend.");
       }
 
-      setInviteStatus({
-        type: "success",
-        message: `Convite enviado com sucesso para ${trimmedEmail}! O colaborador foi adicionado ao tenant com o cargo ${inviteRole.toUpperCase()}.`,
-      });
       setInviteName("");
       setInviteEmail("");
-      
-      // Auto-clear notification after 6 seconds
-      setTimeout(() => {
-        setInviteStatus((curr) => (curr?.type === "success" ? null : curr));
-      }, 6000);
+      setInviteCustomPassword("");
+      setAutoGenPassword(true);
     } catch (err: any) {
       setInviteStatus({
         type: "error",
@@ -606,6 +619,64 @@ export const SettingsModule: React.FC = () => {
             </div>
           )}
 
+          {/* Notification Banner */}
+          {inviteStatus && (
+            <div
+              className={cn(
+                "p-4 rounded-2xl border text-xs space-y-2 animate-in fade-in duration-200",
+                inviteStatus.type === "success"
+                  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300"
+                  : inviteStatus.type === "error"
+                  ? "bg-rose-500/10 border-rose-500/20 text-rose-800 dark:text-rose-300"
+                  : "bg-blue-500/10 border-blue-500/20 text-blue-800 dark:text-blue-300"
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2 font-medium">
+                  {inviteStatus.type === "success" && <Check className="w-4 h-4 text-emerald-500 shrink-0" />}
+                  {inviteStatus.type === "error" && <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />}
+                  {inviteStatus.type === "info" && <Sparkles className="w-4 h-4 text-blue-500 shrink-0" />}
+                  <span>{inviteStatus.message}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInviteStatus(null)}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              </div>
+
+              {inviteStatus.temporaryPassword && (
+                <div className="mt-2 p-3 bg-white dark:bg-slate-950 rounded-xl border border-emerald-500/30 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
+                      Senha Provisória Gerada para o Colaborador:
+                    </div>
+                    <div className="font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400 select-all tracking-wider">
+                      {inviteStatus.temporaryPassword}
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      O colaborador usará esta senha no primeiro login e será solicitado a cadastrar uma definitiva.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(inviteStatus.temporaryPassword!);
+                      setCopiedTempPass(true);
+                      setTimeout(() => setCopiedTempPass(false), 3000);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {copiedTempPass ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedTempPass ? "Copiada!" : "Copiar Senha"}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 1. RESTRIÇÃO DE INTERFACE (RBAC): Invite Box Exclusiva para Master Admin e Admin */}
           {canManageTenant ? (
             <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
@@ -616,7 +687,7 @@ export const SettingsModule: React.FC = () => {
                     Convidar Novo Colaborador para o Tenant
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Dispara o convite seguro via Supabase Auth / Magic Link e adiciona o perfil do colaborador às permissões da empresa.
+                    Cadastre novos membros com opção de senha provisória automática ou personalizada. No primeiro acesso, o colaborador define a senha definitiva.
                   </p>
                 </div>
                 <span className="text-[10px] px-2.5 py-1 rounded-full font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center gap-1">
@@ -625,68 +696,118 @@ export const SettingsModule: React.FC = () => {
                 </span>
               </div>
 
-              <form onSubmit={handleInviteMember} className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-1">
-                <input
-                  type="text"
-                  placeholder="Nome Completo (opcional)"
-                  value={inviteName}
-                  onChange={(e) => setInviteName(e.target.value)}
-                  disabled={isInviting}
-                  className="sm:col-span-3 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
-                />
+              <form onSubmit={handleInviteMember} className="space-y-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                  <input
+                    type="text"
+                    placeholder="Nome Completo (opcional)"
+                    value={inviteName}
+                    onChange={(e) => setInviteName(e.target.value)}
+                    disabled={isInviting}
+                    className="sm:col-span-3 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                  />
 
-                <input
-                  type="email"
-                  required
-                  placeholder="colaborador@empresa.com.br"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  disabled={isInviting}
-                  className="sm:col-span-4 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
-                />
+                  <input
+                    type="email"
+                    required
+                    placeholder="colaborador@empresa.com.br"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    disabled={isInviting}
+                    className="sm:col-span-4 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                  />
 
-                <select
-                  value={inviteSector}
-                  onChange={(e) => setInviteSector(e.target.value)}
-                  disabled={isInviting}
-                  className="sm:col-span-2 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
-                >
-                  <option value="Tecnologia & Inovação">Tecnologia</option>
-                  <option value="Financeiro & Controladoria">Financeiro</option>
-                  <option value="Comercial & Vendas">Comercial</option>
-                  <option value="Jurídico & Compliance">Jurídico</option>
-                  <option value="Recursos Humanos">RH</option>
-                  <option value="Marketing & Growth">Marketing</option>
-                  <option value="Operações & Suporte">Operações</option>
-                </select>
+                  <select
+                    value={inviteSector}
+                    onChange={(e) => setInviteSector(e.target.value)}
+                    disabled={isInviting}
+                    className="sm:col-span-3 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                  >
+                    <option value="Tecnologia & Inovação">Tecnologia</option>
+                    <option value="Financeiro & Controladoria">Financeiro</option>
+                    <option value="Comercial & Vendas">Comercial</option>
+                    <option value="Jurídico & Compliance">Jurídico</option>
+                    <option value="Recursos Humanos">RH</option>
+                    <option value="Marketing & Growth">Marketing</option>
+                    <option value="Operações & Suporte">Operações</option>
+                  </select>
 
-                <select
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as Role)}
-                  disabled={isInviting}
-                  className="sm:col-span-2 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
-                >
-                  <option value="user">Colaborador (User)</option>
-                  <option value="admin">Administrador (Admin)</option>
-                  {currentUser?.role === "master_admin" && (
-                    <option value="master_admin">Master Admin</option>
+                  <select
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value as Role)}
+                    disabled={isInviting}
+                    className="sm:col-span-2 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                  >
+                    <option value="user">Colaborador (User)</option>
+                    <option value="admin">Administrador (Admin)</option>
+                    {currentUser?.role === "master_admin" && (
+                      <option value="master_admin">Master Admin</option>
+                    )}
+                  </select>
+                </div>
+
+                {/* Password Generation Mode Selector */}
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-4 text-xs">
+                    <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-medium">
+                      <input
+                        type="radio"
+                        name="invitePassMode"
+                        checked={autoGenPassword}
+                        onChange={() => setAutoGenPassword(true)}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Gerar Senha Provisória Automática</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-medium">
+                      <input
+                        type="radio"
+                        name="invitePassMode"
+                        checked={!autoGenPassword}
+                        onChange={() => setAutoGenPassword(false)}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Definir Senha Provisória Manual</span>
+                    </label>
+                  </div>
+
+                  {!autoGenPassword && (
+                    <div className="relative flex-1 max-w-xs">
+                      <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                      <input
+                        type={showInvitePass ? "text" : "password"}
+                        value={inviteCustomPassword}
+                        onChange={(e) => setInviteCustomPassword(e.target.value)}
+                        placeholder="Mínimo 6 caracteres"
+                        className="w-full pl-8 pr-8 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowInvitePass(!showInvitePass)}
+                        className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                      >
+                        {showInvitePass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
                   )}
-                </select>
 
-                <button
-                  type="submit"
-                  disabled={isInviting}
-                  className="sm:col-span-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
-                >
-                  {isInviting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Mail className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Enviar</span>
-                    </>
-                  )}
-                </button>
+                  <button
+                    type="submit"
+                    id="btn-submit-invite-member"
+                    disabled={isInviting}
+                    className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer shrink-0"
+                  >
+                    {isInviting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>Cadastrar e Convidar</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </form>
             </div>
           ) : (
@@ -796,23 +917,36 @@ export const SettingsModule: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-4 text-right">
-                        {canManageTenant && m.role !== "master_admin" && m.id !== currentUser?.id ? (
-                          <button
-                            type="button"
-                            disabled={deletingMemberId === m.id}
-                            onClick={() => handleRemoveMember(m.id, m.name)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors disabled:opacity-40"
-                            title="Desativar / Revogar Acesso deste Colaborador"
-                          >
-                            {deletingMemberId === m.id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
-                            ) : (
-                              <Trash2 className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        ) : (
-                          <span className="text-slate-300 dark:text-slate-600 text-[10px]">—</span>
-                        )}
+                        <div className="flex items-center justify-end gap-1">
+                          {canManageTenant && m.id !== currentUser?.id && (
+                            <button
+                              type="button"
+                              onClick={() => setMemberToResetPassword(m)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors"
+                              title="Redefinir / Gerar Nova Senha Provisória para este Colaborador"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {canManageTenant && m.role !== "master_admin" && m.id !== currentUser?.id ? (
+                            <button
+                              type="button"
+                              disabled={deletingMemberId === m.id}
+                              onClick={() => handleRemoveMember(m.id, m.name)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors disabled:opacity-40"
+                              title="Desativar / Revogar Acesso deste Colaborador"
+                            >
+                              {deletingMemberId === m.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          ) : (
+                            !canManageTenant && <span className="text-slate-300 dark:text-slate-600 text-[10px]">—</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -822,6 +956,13 @@ export const SettingsModule: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Admin Reset Password Modal */}
+      <AdminResetPasswordModal
+        member={memberToResetPassword}
+        isOpen={!!memberToResetPassword}
+        onClose={() => setMemberToResetPassword(null)}
+      />
     </div>
   );
 };

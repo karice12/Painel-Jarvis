@@ -434,6 +434,8 @@ app.post("/api/auth/login", (req, res) => {
       avatar: user.avatar,
       sector: user.sector,
       status: user.status,
+      needsPasswordChange: user.needsPasswordChange || false,
+      temporaryPassword: user.temporaryPassword,
       createdAt: user.createdAt,
     },
     tenant,
@@ -525,6 +527,8 @@ app.get("/api/auth/me", (req, res) => {
           avatar: user.avatar,
           sector: user.sector,
           status: user.status,
+          needsPasswordChange: user.needsPasswordChange || false,
+          temporaryPassword: user.temporaryPassword,
           createdAt: user.createdAt,
         },
         tenant,
@@ -1353,7 +1357,7 @@ app.get("/api/users", (req, res) => {
 });
 
 app.post(["/api/users", "/api/users/invite"], (req, res) => {
-  const { name, email, role, sector, tenantId, tenantName, status, avatar } = req.body;
+  const { name, email, role, sector, tenantId, tenantName, status, avatar, password, generateTempPassword } = req.body;
   if (!email) {
     return res.status(400).json({ error: "E-mail corporativo obrigatório" });
   }
@@ -1366,11 +1370,15 @@ app.post(["/api/users", "/api/users/invite"], (req, res) => {
 
   const tenant = DB.tenants.find((t) => t.id === (tenantId || "tenant_omni_01")) || DB.tenants[0];
 
+  // Generate or use assigned password
+  const finalPassword = password && password.trim() ? password.trim() : `Temp@${Math.floor(100000 + Math.random() * 900000)}`;
+  const needsPasswordChange = generateTempPassword !== false; // by default new invited users must change password on first access
+
   const newUser = {
     id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
     name: name || cleanEmail.split("@")[0],
     email: cleanEmail,
-    password: "password123",
+    password: finalPassword,
     role: (role as any) || "user",
     tenantId: tenant.id,
     tenantName: tenantName || tenant.name,
@@ -1379,6 +1387,8 @@ app.post(["/api/users", "/api/users/invite"], (req, res) => {
       `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 50000)}?w=150&auto=format&fit=crop&q=80`,
     sector: sector || "Tecnologia & Inovação",
     status: (status as any) || "online",
+    needsPasswordChange: needsPasswordChange,
+    temporaryPassword: needsPasswordChange ? finalPassword : undefined,
     createdAt: new Date().toISOString(),
   };
 
@@ -1390,14 +1400,132 @@ app.post(["/api/users", "/api/users/invite"], (req, res) => {
     "karice.pelegrinosilva@gmail.com",
     "master_admin",
     "USER_MEMBER_INVITED",
-    `Novo usuário '${newUser.name}' (${newUser.email}) cadastrado com a role '${newUser.role}' no setor '${newUser.sector}'`,
+    `Novo usuário '${newUser.name}' (${newUser.email}) cadastrado com senha provisória e role '${newUser.role}' no setor '${newUser.sector}'`,
     tenant.id,
     "success",
     req.ip || "127.0.0.1"
   );
 
-  const { password, ...safeUser } = newUser;
-  res.json({ success: true, user: safeUser });
+  const { password: _, ...safeUser } = newUser;
+  res.json({ success: true, user: safeUser, temporaryPassword: finalPassword });
+});
+
+// Admin Reset Password endpoint
+app.post("/api/users/:id/reset-password", (req, res) => {
+  const { id } = req.params;
+  const { newPassword } = req.body;
+  const user = DB.users.find((u) => u.id === id);
+
+  if (!user) {
+    return res.status(404).json({ error: "Colaborador não encontrado" });
+  }
+
+  const generatedPassword = newPassword && newPassword.trim() ? newPassword.trim() : `Temp@${Math.floor(100000 + Math.random() * 900000)}`;
+  user.password = generatedPassword;
+  user.needsPasswordChange = true;
+  user.temporaryPassword = generatedPassword;
+
+  recordAuditLog(
+    "usr_master_01",
+    "Karice Pelegrino",
+    "karice.pelegrinosilva@gmail.com",
+    "master_admin",
+    "USER_PASSWORD_RESET",
+    `Senha do colaborador '${user.name}' (${user.email}) redefinida com flag de troca obrigatória no próximo login`,
+    user.tenantId,
+    "success",
+    req.ip || "127.0.0.1"
+  );
+
+  const { password: _, ...safeUser } = user;
+  res.json({
+    success: true,
+    message: `Senha redefinida com sucesso para o usuário ${user.name}.`,
+    temporaryPassword: generatedPassword,
+    user: safeUser,
+  });
+});
+
+// Self Change Password (e.g. on first login or profile update)
+app.post("/api/auth/change-password", (req, res) => {
+  const { userId, email, currentPassword, newPassword } = req.body;
+  
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: "A nova senha deve conter no mínimo 6 caracteres." });
+  }
+
+  const user = DB.users.find((u) => (userId && u.id === userId) || (email && u.email.toLowerCase() === email.toLowerCase()));
+
+  if (!user) {
+    return res.status(404).json({ error: "Usuário não encontrado." });
+  }
+
+  // Validate current password if provided
+  if (currentPassword && user.password && user.password !== currentPassword && user.temporaryPassword !== currentPassword) {
+    return res.status(400).json({ error: "A senha atual/provisória informada está incorreta." });
+  }
+
+  user.password = newPassword;
+  user.needsPasswordChange = false;
+  delete user.temporaryPassword;
+
+  recordAuditLog(
+    user.id,
+    user.name,
+    user.email,
+    user.role,
+    "USER_PASSWORD_CHANGED",
+    `Senha definitiva atualizada com sucesso pelo colaborador`,
+    user.tenantId,
+    "success",
+    req.ip || "127.0.0.1"
+  );
+
+  const { password: _, ...safeUser } = user;
+  res.json({
+    success: true,
+    message: "Senha definitiva atualizada com sucesso!",
+    user: safeUser,
+  });
+});
+
+// Self Request Password Reset (Forgot Password)
+app.post("/api/auth/forgot-password", (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "Informe o e-mail cadastrado." });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const user = DB.users.find((u) => u.email.toLowerCase() === cleanEmail);
+
+  if (!user) {
+    // Return friendly message even if not found for security, or explicit for demo
+    return res.status(404).json({ error: "Nenhum colaborador encontrado com este e-mail corporativo." });
+  }
+
+  const tempPass = `Reset@${Math.floor(100000 + Math.random() * 900000)}`;
+  user.password = tempPass;
+  user.needsPasswordChange = true;
+  user.temporaryPassword = tempPass;
+
+  recordAuditLog(
+    user.id,
+    user.name,
+    user.email,
+    user.role,
+    "USER_FORGOT_PASSWORD_REQUEST",
+    `Solicitação de recuperação de senha processada com geração de senha temporária`,
+    user.tenantId,
+    "success",
+    req.ip || "127.0.0.1"
+  );
+
+  res.json({
+    success: true,
+    message: `Código/Senha de acesso provisória gerada com sucesso para ${cleanEmail}!`,
+    temporaryPassword: tempPass,
+  });
 });
 
 app.patch("/api/users/:id/role", (req, res) => {

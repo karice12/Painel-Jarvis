@@ -13,6 +13,7 @@ import { SettingsModule } from "./components/modules/SettingsModule";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { NavTab } from "./types";
 import { AlertCircle, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
+import { ForceChangePasswordModal } from "./components/auth/ForceChangePasswordModal";
 
 const MainAppContent: React.FC = () => {
   const { isAuthenticated, isLoading, authError, clearAuthError, logout } = useAuth();
@@ -145,6 +146,9 @@ const MainAppContent: React.FC = () => {
           </div>
         </main>
       </div>
+
+      {/* Force Change Password Modal for First Access */}
+      <ForceChangePasswordModal />
     </div>
   );
 };

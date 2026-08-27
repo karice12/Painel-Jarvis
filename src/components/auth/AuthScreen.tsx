@@ -10,9 +10,11 @@ import {
   Cpu,
   Database,
   AlertCircle,
+  HelpCircle,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { cn } from "../../lib/utils";
+import { ForgotPasswordModal } from "./ForgotPasswordModal";
 
 export const AuthScreen: React.FC = () => {
   const { login, loginWithMagicLink, isLoading } = useAuth();
@@ -20,6 +22,7 @@ export const AuthScreen: React.FC = () => {
   const [authMode, setAuthMode] = useState<"password" | "magic_link">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isForgotPassOpen, setIsForgotPassOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -207,13 +210,25 @@ export const AuthScreen: React.FC = () => {
                   <label className="text-xs font-medium text-slate-300">
                     Senha de Acesso
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode("magic_link")}
-                    className="text-[11px] text-blue-400 hover:underline"
-                  >
-                    Sem senha? Use Magic Link
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      id="btn-forgot-password-link"
+                      onClick={() => setIsForgotPassOpen(true)}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 hover:underline flex items-center gap-1"
+                    >
+                      <HelpCircle className="w-3 h-3" />
+                      Esqueceu a senha?
+                    </button>
+                    <span className="text-slate-600 text-[10px]">•</span>
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode("magic_link")}
+                      className="text-[11px] text-slate-400 hover:text-slate-300 hover:underline"
+                    >
+                      Magic Link
+                    </button>
+                  </div>
                 </div>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
@@ -284,6 +299,13 @@ export const AuthScreen: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      <ForgotPasswordModal
+        isOpen={isForgotPassOpen}
+        onClose={() => setIsForgotPassOpen(false)}
+        initialEmail={email}
+      />
     </div>
   );
 };

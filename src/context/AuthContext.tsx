@@ -19,6 +19,9 @@ interface AuthContextType {
   signUp: (email: string, password: string, name: string, sector: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   updateUserRole: (targetUserId: string, newRole: Role) => Promise<{ success: boolean; error?: string }>;
+  changePassword: (newPassword: string, currentPassword?: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  resetMemberPassword: (targetUserId: string, customNewPassword?: string) => Promise<{ success: boolean; temporaryPassword?: string; message?: string; error?: string }>;
+  requestForgotPassword: (email: string) => Promise<{ success: boolean; temporaryPassword?: string; message?: string; error?: string }>;
   toggleTheme: () => void;
   updateTenantConfig: (config: Partial<TenantConfig>) => Promise<boolean>;
   refreshUserData: () => Promise<void>;
@@ -564,6 +567,162 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Change password method for self (e.g. from temporary password to permanent password)
+  const changePassword = async (
+    newPassword: string,
+    currentPassword?: string
+  ): Promise<{ success: boolean; message?: string; error?: string }> => {
+    try {
+      if (!user) {
+        return { success: false, error: "Usuário não autenticado." };
+      }
+
+      // 1. If Supabase is active, update Supabase user password
+      if (isSupabaseConfigured) {
+        try {
+          const { error: supPassErr } = await supabase.auth.updateUser({
+            password: newPassword,
+          });
+          if (supPassErr) {
+            console.warn("Supabase auth updateUser password warning:", supPassErr.message);
+          }
+        } catch (supErr: any) {
+          console.warn("Supabase password update notice:", supErr);
+        }
+      }
+
+      // 2. Call backend /api/auth/change-password
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          email: user.email,
+          currentPassword,
+          newPassword,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        return { success: false, error: errData.error || "Não foi possível atualizar a senha no servidor." };
+      }
+
+      const data = await res.json();
+      // Update current user state so needsPasswordChange modal disappears immediately
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              needsPasswordChange: false,
+              temporaryPassword: undefined,
+            }
+          : null
+      );
+
+      recordAuditAction({
+        action: "USER_PASSWORD_CHANGED",
+        details: `Senha definitiva configurada com sucesso pelo colaborador ${user.name}`,
+        resource: user.id,
+        user,
+        tenantId: user.tenantId,
+      });
+
+      return { success: true, message: data.message || "Senha definitiva cadastrada com sucesso!" };
+    } catch (e: any) {
+      console.error("Change password error:", e);
+      return { success: false, error: e.message || "Erro inesperado ao alterar senha." };
+    }
+  };
+
+  // Admin resets a member's password
+  const resetMemberPassword = async (
+    targetUserId: string,
+    customNewPassword?: string
+  ): Promise<{ success: boolean; temporaryPassword?: string; message?: string; error?: string }> => {
+    if (!canManageTenant) {
+      return { success: false, error: "Apenas administradores podem redefinir senhas de colaboradores." };
+    }
+
+    try {
+      const res = await fetch(`/api/users/${targetUserId}/reset-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({ newPassword: customNewPassword }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        return { success: false, error: errData.error || "Falha ao redefinir a senha do colaborador." };
+      }
+
+      const data = await res.json();
+
+      recordAuditAction({
+        action: "USER_PASSWORD_RESET",
+        details: `Administrador ${user?.name} redefiniu a senha do usuário ${targetUserId}`,
+        resource: targetUserId,
+        user,
+        tenantId: user?.tenantId,
+        metadata: { targetUserId },
+      });
+
+      return {
+        success: true,
+        temporaryPassword: data.temporaryPassword,
+        message: data.message || "Senha redefinida com sucesso!",
+      };
+    } catch (e: any) {
+      console.error("Reset member password error:", e);
+      return { success: false, error: e.message || "Erro inesperado ao redefinir senha." };
+    }
+  };
+
+  // Forgot password request from login screen
+  const requestForgotPassword = async (
+    email: string
+  ): Promise<{ success: boolean; temporaryPassword?: string; message?: string; error?: string }> => {
+    try {
+      // If Supabase is active, trigger reset password email
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: window.location.origin,
+          });
+        } catch (supErr) {
+          console.warn("Supabase resetPasswordForEmail notice:", supErr);
+        }
+      }
+
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        return { success: false, error: errData.error || "Não foi possível recuperar a senha." };
+      }
+
+      const data = await res.json();
+      return {
+        success: true,
+        temporaryPassword: data.temporaryPassword,
+        message: data.message || "Senha provisória gerada com sucesso!",
+      };
+    } catch (e: any) {
+      console.error("Forgot password request error:", e);
+      return { success: false, error: e.message || "Erro inesperado ao solicitar recuperação de senha." };
+    }
+  };
+
   const toggleTheme = () => {
     setTheme((prev) => {
       const next = prev === "dark" ? "light" : "dark";
@@ -660,6 +819,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signUp,
         logout,
         updateUserRole,
+        changePassword,
+        resetMemberPassword,
+        requestForgotPassword,
         toggleTheme,
         updateTenantConfig,
         refreshUserData,
