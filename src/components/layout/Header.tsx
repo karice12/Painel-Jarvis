@@ -51,18 +51,11 @@ export const Header: React.FC<HeaderProps> = ({ currentTabName, activeTab }) => 
 
   const tenantsList = [
     {
-      id: "tenant_omni_01",
-      name: "Nexus Enterprise S.A.",
-      subdomain: "nexus.omnisas.io",
-      color: "#2563eb",
-      logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=120&auto=format&fit=crop&q=80",
-    },
-    {
-      id: "tenant_acme_02",
-      name: "Acme Global Tech",
-      subdomain: "acme.omnisas.io",
-      color: "#059669",
-      logoUrl: "https://images.unsplash.com/photo-1557683316-973673baf926?w=120&auto=format&fit=crop&q=80",
+      id: tenant?.id || "tenant_omni_01",
+      name: tenant?.name || "Sua Empresa S.A.",
+      subdomain: tenant?.subdomain || "app.omnisas.io",
+      color: tenant?.primaryColor || "#2563eb",
+      logoUrl: tenant?.logoUrl || "",
     },
   ];
 

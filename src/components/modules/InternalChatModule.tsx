@@ -40,95 +40,14 @@ export const InternalChatModule: React.FC = () => {
       isPrivate: false,
       unreadCount: 0,
     },
-    {
-      id: "chan_tec",
-      name: "tecnologia-ia",
-      sector: "Tecnologia & Inovação",
-      description: "Discussões de engenharia, arquitetura e integrações OpenJarvis",
-      isPrivate: false,
-      unreadCount: 0,
-    },
-    {
-      id: "chan_fin",
-      name: "financeiro-contabil",
-      sector: "Financeiro & Controladoria",
-      description: "Balanços, orçamentos e relatórios DRE",
-      isPrivate: true,
-      unreadCount: 0,
-    },
-    {
-      id: "chan_cs",
-      name: "suporte-clientes",
-      sector: "Suporte ao Cliente & CS",
-      description: "Atendimento N1, N2 e resoluções de tickets",
-      isPrivate: false,
-      unreadCount: 0,
-    },
-    {
-      id: "chan_mkt",
-      name: "marketing-growth",
-      sector: "Marketing & Growth",
-      description: "Campanhas, métricas de aquisição e branding",
-      isPrivate: false,
-      unreadCount: 0,
-    },
   ]);
 
   // Team Members from Supabase 'profiles' table / API
-  const [teamMembers, setTeamMembers] = useState<User[]>([
-    {
-      id: "usr_master_01",
-      name: "Rodrigo Alencar",
-      email: "rodrigo.master@nexus.com.br",
-      role: "master_admin",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise",
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      sector: "Diretoria Executiva",
-      status: "online",
-      createdAt: "2025-01-10",
-    },
-    {
-      id: "usr_admin_01",
-      name: "Helena Beatriz Costa",
-      email: "helena.admin@nexus.com.br",
-      role: "admin",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise",
-      avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
-      sector: "Tecnologia & Inovação",
-      status: "online",
-      createdAt: "2025-02-14",
-    },
-    {
-      id: "usr_user_01",
-      name: "Carlos Eduardo Silva",
-      email: "carlos.silva@nexus.com.br",
-      role: "user",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-      sector: "Financeiro & Controladoria",
-      status: "online",
-      createdAt: "2025-03-01",
-    },
-    {
-      id: "usr_user_02",
-      name: "Mariana Souza Lima",
-      email: "mariana.lima@nexus.com.br",
-      role: "user",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise",
-      avatar: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
-      sector: "Suporte ao Cliente & CS",
-      status: "away",
-      createdAt: "2025-03-05",
-    },
-  ]);
+  const [teamMembers, setTeamMembers] = useState<User[]>([]);
 
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [activeChatType, setActiveChatType] = useState<"channel" | "dm">("channel");
-  const [activeChannelId, setActiveChannelId] = useState("chan_tec");
+  const [activeChannelId, setActiveChannelId] = useState("chan_geral");
   const [activeDmUserId, setActiveDmUserId] = useState<string | null>(null);
 
   const [inputText, setInputText] = useState("");

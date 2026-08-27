@@ -45,352 +45,37 @@ interface DBStructure {
   chatChannels?: any[];
 }
 
-// In-Memory Database Store for Multi-Tenant Data & State
+// In-Memory Database Store for Multi-Tenant Data & State (Production-ready zeroed state)
 const DB: DBStructure = {
   tenants: [
     {
       id: "tenant_omni_01",
-      name: "Nexus Enterprise S.A.",
-      subdomain: "nexus.omnisas.io",
-      logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=120&auto=format&fit=crop&q=80",
-      primaryColor: "#2563eb", // Royal Tech Blue
+      name: "Sua Empresa S.A.",
+      subdomain: "app.omnisas.io",
+      logoUrl: "",
+      primaryColor: "#2563eb",
       themeMode: "dark",
       monthlyRequestLimit: 10000,
-      currentRequests: 8450,
+      currentRequests: 0,
       storageLimitGb: 10,
-      currentStorageGb: 3.42,
+      currentStorageGb: 0,
       apiKeyMasked: "omni_live_98fc************3a21",
-      webhookUrl: "https://api.nexus.com.br/webhooks/openjarvis",
+      webhookUrl: "",
       plan: "Enterprise Pro",
-      aiModelName: "OpenJarvis v4.2 (Gemini Flash Engine)",
-    },
-    {
-      id: "tenant_acme_02",
-      name: "Acme Global Tech",
-      subdomain: "acme.omnisas.io",
-      logoUrl: "https://images.unsplash.com/photo-1557683316-973673baf926?w=120&auto=format&fit=crop&q=80",
-      primaryColor: "#059669", // Emerald
-      themeMode: "light",
-      monthlyRequestLimit: 5000,
-      currentRequests: 2120,
-      storageLimitGb: 5,
-      currentStorageGb: 1.15,
-      apiKeyMasked: "omni_live_41aa************77c9",
-      webhookUrl: "https://acme.io/ai-events",
-      plan: "Business",
-      aiModelName: "OpenJarvis Standard (Gemini Flash)",
+      aiModelName: "OpenJarvis v4.2",
     },
   ],
-  users: [
-    {
-      id: "usr_master_01",
-      name: "Rodrigo Alencar",
-      email: "rodrigo.master@nexus.com.br",
-      password: "password123",
-      role: "master_admin",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise S.A.",
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      sector: "Diretoria Executiva",
-      status: "online",
-      createdAt: "2025-01-10T08:00:00Z",
-    },
-    {
-      id: "usr_admin_01",
-      name: "Helena Beatriz Costa",
-      email: "helena.admin@nexus.com.br",
-      password: "password123",
-      role: "admin",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise S.A.",
-      avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
-      sector: "Tecnologia & Inovação",
-      status: "online",
-      createdAt: "2025-02-14T10:30:00Z",
-    },
-    {
-      id: "usr_user_01",
-      name: "Carlos Eduardo Silva",
-      email: "carlos.silva@nexus.com.br",
-      password: "password123",
-      role: "user",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise S.A.",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-      sector: "Financeiro & Controladoria",
-      status: "online",
-      createdAt: "2025-03-01T14:15:00Z",
-    },
-    {
-      id: "usr_user_02",
-      name: "Mariana Souza Lima",
-      email: "mariana.lima@nexus.com.br",
-      password: "password123",
-      role: "user",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise S.A.",
-      avatar: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
-      sector: "Suporte ao Cliente & CS",
-      status: "away",
-      createdAt: "2025-03-05T09:00:00Z",
-    },
-    {
-      id: "usr_user_03",
-      name: "Gabriel Ramos",
-      email: "gabriel.ramos@nexus.com.br",
-      password: "password123",
-      role: "user",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise S.A.",
-      avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
-      sector: "Marketing & Growth",
-      status: "offline",
-      createdAt: "2025-03-12T11:20:00Z",
-    },
-  ],
-  documents: [
-    {
-      id: "doc_01",
-      tenantId: "tenant_omni_01",
-      name: "Politica_Seguranca_Informacao_2026.pdf",
-      size: "2.4 MB",
-      sizeBytes: 2516582,
-      sector: "Tecnologia & Inovação",
-      uploadedAt: "2026-08-15T14:32:00Z",
-      uploadedBy: "Helena Beatriz Costa",
-      indexStatus: "indexed",
-      visibility: "company",
-      fileType: "pdf",
-      tokensEstimated: 14200,
-      contentSnippet:
-        "Diretrizes de conformidade LGPD, controle de acesso RBAC, criptografia TLS 1.3 em trânsito e AES-256 em repouso. Autenticação multifator obrigatória para todos os acessos administrativos. Backups diários imutáveis e auditoria periódica de logs.",
-    },
-    {
-      id: "doc_02",
-      tenantId: "tenant_omni_01",
-      name: "Manual_Onboarding_Colaboradores_v3.docx",
-      size: "1.8 MB",
-      sizeBytes: 1887436,
-      sector: "Diretoria Executiva",
-      uploadedAt: "2026-08-18T09:15:00Z",
-      uploadedBy: "Rodrigo Alencar",
-      indexStatus: "indexed",
-      visibility: "company",
-      fileType: "docx",
-      tokensEstimated: 8500,
-      contentSnippet:
-        "Guia completo de boas-vindas: cultura corporativa, estrutura organizacional dos departamentos, benefícios corporativos, uso do assistente OpenJarvis e fluxo de solicitação de reembolsos.",
-    },
-    {
-      id: "doc_03",
-      tenantId: "tenant_omni_01",
-      name: "Relatorio_DRE_Q2_2026_Consolidado.csv",
-      size: "840 KB",
-      sizeBytes: 860160,
-      sector: "Financeiro & Controladoria",
-      uploadedAt: "2026-08-20T16:45:00Z",
-      uploadedBy: "Carlos Eduardo Silva",
-      indexStatus: "indexed",
-      visibility: "sector",
-      fileType: "csv",
-      tokensEstimated: 4100,
-      contentSnippet:
-        "Demonstrativo de Resultados do Exercício Q2: Receita Bruta R$ 4.820.000, Margem EBITDA de 31.4%, Redução de custos operacionais com automação de IA em 18.2%. Projeção Q3 com expansão SaaS.",
-    },
-    {
-      id: "doc_04",
-      tenantId: "tenant_omni_01",
-      name: "Playbook_Atendimento_SLA_Suporte.pdf",
-      size: "3.1 MB",
-      sizeBytes: 3250585,
-      sector: "Suporte ao Cliente & CS",
-      uploadedAt: "2026-08-22T11:00:00Z",
-      uploadedBy: "Mariana Souza Lima",
-      indexStatus: "indexed",
-      visibility: "company",
-      fileType: "pdf",
-      tokensEstimated: 12000,
-      contentSnippet:
-        "Procedimentos para suporte N1, N2 e N3. SLA de 15 minutos para chamados críticos de indisponibilidade da API. Templates de respostas empáticas e fluxos de escalonamento para o time de infraestrutura.",
-    },
-    {
-      id: "doc_05",
-      tenantId: "tenant_omni_01",
-      name: "Planejamento_Estrategico_Q3_Marketing.docx",
-      size: "950 KB",
-      sizeBytes: 972800,
-      sector: "Marketing & Growth",
-      uploadedAt: "2026-08-24T17:10:00Z",
-      uploadedBy: "Gabriel Ramos",
-      indexStatus: "processing",
-      visibility: "sector",
-      fileType: "docx",
-      tokensEstimated: 5300,
-      contentSnippet:
-        "Campanha de lançamento da versão 4.0 do SaaS OpenJarvis. Orçamento de mídia paga de R$ 120.000 no Google Ads e LinkedIn. Meta de aquisição de 45 novos clientes enterprise.",
-    },
-  ],
-  auditLogs: [
-    {
-      id: "log_101",
-      timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-      userId: "usr_master_01",
-      userName: "Rodrigo Alencar",
-      userEmail: "rodrigo.master@nexus.com.br",
-      userRole: "master_admin",
-      action: "AUTH_LOGIN_SUCCESS",
-      details: "Autenticação efetuada com sucesso via JWT e Magic Link verificado",
-      ipAddress: "189.40.122.15",
-      tenantId: "tenant_omni_01",
-      status: "success",
-    },
-    {
-      id: "log_102",
-      timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-      userId: "usr_admin_01",
-      userName: "Helena Beatriz Costa",
-      userEmail: "helena.admin@nexus.com.br",
-      userRole: "admin",
-      action: "AI_RAG_DOCUMENT_INDEX",
-      details: "Documento 'Politica_Seguranca_Informacao_2026.pdf' vetorizado e indexado com 14.2k tokens",
-      ipAddress: "177.18.94.202",
-      tenantId: "tenant_omni_01",
-      status: "success",
-    },
-    {
-      id: "log_103",
-      timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-      userId: "usr_user_01",
-      userName: "Carlos Eduardo Silva",
-      userEmail: "carlos.silva@nexus.com.br",
-      userRole: "user",
-      action: "AI_QUERY_OPENJARVIS",
-      details: "Consulta com RAG ativo sobre métricas financeiras do DRE Q2",
-      ipAddress: "201.86.110.4",
-      tenantId: "tenant_omni_01",
-      status: "success",
-    },
-    {
-      id: "log_104",
-      timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-      userId: "usr_master_01",
-      userName: "Rodrigo Alencar",
-      userEmail: "rodrigo.master@nexus.com.br",
-      userRole: "master_admin",
-      action: "CONFIG_THEME_UPDATE",
-      details: "Atualização de White-Label: Cor primária alterada para #2563eb e logotipo renovado",
-      ipAddress: "189.40.122.15",
-      tenantId: "tenant_omni_01",
-      status: "success",
-    },
-    {
-      id: "log_105",
-      timestamp: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
-      userId: "usr_user_02",
-      userName: "Mariana Souza Lima",
-      userEmail: "mariana.lima@nexus.com.br",
-      userRole: "user",
-      action: "RBAC_PERMISSION_CHECK",
-      details: "Tentativa de acesso a logs restritos de auditoria bloqueada por política RBAC",
-      ipAddress: "191.242.33.88",
-      tenantId: "tenant_omni_01",
-      status: "denied",
-    },
-  ],
-  events: [
-    {
-      id: "evt_01",
-      title: "Reunião de Alinhamento Estratégico Q3",
-      description: "Revisão das metas de IA e validação da capacidade de tokens com a Diretoria.",
-      date: new Date().toISOString().split("T")[0],
-      startTime: "14:00",
-      endTime: "15:30",
-      category: "reuniao",
-      sector: "Diretoria Executiva",
-      participants: ["Rodrigo Alencar", "Helena Beatriz Costa", "Carlos Eduardo Silva"],
-      meetUrl: "https://meet.google.com/omn-jarv-q3",
-      isAiGenerated: false,
-    },
-    {
-      id: "evt_02",
-      title: "Treinamento: Integração RAG com OpenJarvis",
-      description: "Capacitação das equipes sobre upload e consulta segura de documentos corporativos.",
-      date: new Date(Date.now() + 86400000).toISOString().split("T")[0],
-      startTime: "10:00",
-      endTime: "11:00",
-      category: "ia_gerado",
-      sector: "Tecnologia & Inovação",
-      participants: ["Helena Beatriz Costa", "Mariana Souza Lima", "Gabriel Ramos"],
-      meetUrl: "https://meet.google.com/rag-open-training",
-      isAiGenerated: true,
-    },
-  ],
-  chatMessages: [
-    {
-      id: "msg_init_01",
-      channelId: "c_general",
-      senderId: "usr_master_01",
-      senderName: "Rodrigo Alencar",
-      senderAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      senderRole: "master_admin",
-      senderSector: "Diretoria Executiva",
-      text: "Bem-vindos ao ambiente corporativo integrado OmniJarvis. Toda a base de conhecimento já está conectada para buscas RAG.",
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      tenantId: "tenant_omni_01",
-      reactions: { "🚀": ["usr_master_01", "usr_admin_01"] },
-    },
-    {
-      id: "msg_init_02",
-      channelId: "chan_geral",
-      senderId: "usr_admin_01",
-      senderName: "Helena Beatriz Costa",
-      senderAvatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
-      senderRole: "admin",
-      senderSector: "Tecnologia & Inovação",
-      text: "Acabei de indexar as diretrizes de segurança e a política interna de tokens. O assistente de IA já está consultando perfeitamente.",
-      timestamp: new Date(Date.now() - 1800000).toISOString(),
-      tenantId: "tenant_omni_01",
-      reactions: { "👍": ["usr_user_01"] },
-    },
-  ],
+  users: [],
+  documents: [],
+  auditLogs: [],
+  events: [],
+  chatMessages: [],
   chatChannels: [
     {
       id: "chan_geral",
       name: "geral",
       sector: "Empresa",
       description: "Anúncios gerais e comunicações de toda a empresa",
-      isPrivate: false,
-      tenantId: "tenant_omni_01",
-    },
-    {
-      id: "chan_tec",
-      name: "tecnologia-ia",
-      sector: "Tecnologia & Inovação",
-      description: "Discussões de engenharia, arquitetura e integrações OpenJarvis",
-      isPrivate: false,
-      tenantId: "tenant_omni_01",
-    },
-    {
-      id: "chan_fin",
-      name: "financeiro-contabil",
-      sector: "Financeiro & Controladoria",
-      description: "Balanços, orçamentos e relatórios DRE",
-      isPrivate: true,
-      tenantId: "tenant_omni_01",
-    },
-    {
-      id: "chan_cs",
-      name: "suporte-clientes",
-      sector: "Suporte ao Cliente & CS",
-      description: "Atendimento N1, N2 e resoluções de tickets",
-      isPrivate: false,
-      tenantId: "tenant_omni_01",
-    },
-    {
-      id: "chan_mkt",
-      name: "marketing-growth",
-      sector: "Marketing & Growth",
-      description: "Campanhas, métricas de aquisição e branding",
       isPrivate: false,
       tenantId: "tenant_omni_01",
     },
@@ -683,30 +368,21 @@ app.post("/api/auth/register", (req, res) => {
 });
 
 // ZERO-TRUST AI QUOTA MANAGEMENT: In-memory dynamic daily tracking
-const userDailyAiUsage: Record<string, { date: string; count: number }> = {
-  usr_master_01: { date: new Date().toISOString().split("T")[0], count: 8 },
-  usr_admin_01: { date: new Date().toISOString().split("T")[0], count: 12 },
-  usr_user_01: { date: new Date().toISOString().split("T")[0], count: 14 },
-  usr_user_02: { date: new Date().toISOString().split("T")[0], count: 6 },
-};
+const userDailyAiUsage: Record<string, { date: string; count: number }> = {};
 
 // PROJARVIS WEB SEARCH QUOTA MANAGEMENT: Global Pool = 3.000 reqs/mês
 const GLOBAL_MONTHLY_WEB_SEARCH_POOL = 3000;
-const userWebSearchDailyUsage: Record<string, { date: string; count: number }> = {
-  usr_master_01: { date: new Date().toISOString().split("T")[0], count: 2 },
-  usr_admin_01: { date: new Date().toISOString().split("T")[0], count: 5 },
-  usr_user_01: { date: new Date().toISOString().split("T")[0], count: 4 },
-  usr_user_02: { date: new Date().toISOString().split("T")[0], count: 1 },
-};
+const userWebSearchDailyUsage: Record<string, { date: string; count: number }> = {};
 
 function getDailyQuotaInfo(userId: string, tenantId: string = "tenant_omni_01") {
   const today = new Date().toISOString().split("T")[0];
-  const activeUsersCount = DB.users.filter(
-    (u) => u.tenantId === tenantId && u.status !== "offline"
-  ).length || 4;
+  const activeUsersCount = Math.max(
+    1,
+    DB.users.filter((u) => u.tenantId === tenantId && u.status !== "offline").length
+  );
 
   // Dynamic daily quota calculated securely on the server based on active company users
-  const dailyLimit = Math.max(20, activeUsersCount * 5);
+  const dailyLimit = Math.max(25, activeUsersCount * 10);
 
   if (!userDailyAiUsage[userId] || userDailyAiUsage[userId].date !== today) {
     userDailyAiUsage[userId] = { date: today, count: 0 };
@@ -724,9 +400,10 @@ function getDailyQuotaInfo(userId: string, tenantId: string = "tenant_omni_01") 
 
 function getWebSearchQuotaInfo(userId: string, tenantId: string = "tenant_omni_01") {
   const today = new Date().toISOString().split("T")[0];
-  const activeUsersCount = DB.users.filter(
-    (u) => u.tenantId === tenantId && u.status !== "offline"
-  ).length || 5;
+  const activeUsersCount = Math.max(
+    1,
+    DB.users.filter((u) => u.tenantId === tenantId && u.status !== "offline").length
+  );
 
   // Cota individual diária calculada dinamicamente: 3.000 / membros_ativos / 30 dias
   const dailySearchLimit = Math.max(2, Math.floor(GLOBAL_MONTHLY_WEB_SEARCH_POOL / activeUsersCount / 30));
@@ -1583,47 +1260,54 @@ app.get("/api/dashboard/metrics", (req, res) => {
   const tenantId = (req.query.tenantId as string) || "tenant_omni_01";
 
   const tenant = DB.tenants.find((t) => t.id === tenantId) || DB.tenants[0];
-  const tenantDocs = DB.documents.filter((d) => d.tenantId === tenantId);
-  const tenantLogs = DB.auditLogs.filter((l) => l.tenantId === tenantId);
-  const tenantUsers = DB.users.filter((u) => u.tenantId === tenantId);
+  const tenantDocs = (DB.documents || []).filter((d) => d.tenantId === tenantId);
+  const tenantLogs = (DB.auditLogs || []).filter((l) => l.tenantId === tenantId);
+  const tenantUsers = (DB.users || []).filter((u) => u.tenantId === tenantId);
 
-  // Compute total requests from logs + tenant base
-  const totalRequests = tenant.currentRequests || tenantLogs.length * 12 + 450;
-  
-  // Storage in GB
+  // Compute total requests from tenant counter and logs
+  const totalRequests =
+    tenant?.currentRequests ||
+    tenantLogs.filter((l) => l.action.startsWith("AI_") || l.action.startsWith("GEMINI_")).length ||
+    0;
+
+  // Real Storage in GB
   const totalSizeBytes = tenantDocs.reduce((acc, d) => acc + (d.sizeBytes || 0), 0);
-  const storageUsedGb = Number((totalSizeBytes / (1024 * 1024 * 1024) + 0.85).toFixed(2));
+  const storageUsedGb = Number((totalSizeBytes / (1024 * 1024 * 1024)).toFixed(2));
 
-  // Compute tokens used
-  const totalTokens = tenantDocs.reduce((acc, d) => acc + (d.tokensEstimated || 0), 0) * 10 + 42000;
+  // Compute real tokens used
+  const totalTokens =
+    tenantDocs.reduce((acc, d) => acc + (d.tokensEstimated || 0), 0) +
+    tenantLogs.reduce((acc, l) => acc + ((l.metadata?.tokens || l.metadata?.tokens_used || 0) as number), 0);
 
   // Active users count
   const activeUsersCount = tenantUsers.filter((u) => u.status !== "offline").length;
 
-  // Requests by hour calculation
-  const hoursMap: Record<string, number> = {
-    "08:00": 120,
-    "10:00": 380,
-    "12:00": 240,
-    "14:00": 620,
-    "16:00": 890,
-    "18:00": 540,
-    "20:00": 210,
-  };
+  // Real requests by hour from logs
+  const hourMap: Record<string, { requests: number; tokens: number }> = {};
+  tenantLogs.forEach((log) => {
+    if (log.timestamp) {
+      const hour = new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      if (!hourMap[hour]) hourMap[hour] = { requests: 0, tokens: 0 };
+      hourMap[hour].requests += 1;
+      hourMap[hour].tokens += (log.metadata?.tokens || 350) as number;
+    }
+  });
 
-  const requestsByHour = Object.entries(hoursMap).map(([hour, count]) => ({
+  const requestsByHour = Object.entries(hourMap).map(([hour, data]) => ({
     hour,
-    requests: Math.round(count * (totalRequests / 3000)),
-    tokens: Math.round(count * 45),
+    requests: data.requests,
+    tokens: data.tokens,
   }));
 
-  // Sector distribution
+  // Sector distribution from real users and docs
   const sectorCount: Record<string, number> = {};
   tenantDocs.forEach((d) => {
-    sectorCount[d.sector] = (sectorCount[d.sector] || 0) + 1;
+    const sec = d.sector || "Geral";
+    sectorCount[sec] = (sectorCount[sec] || 0) + 1;
   });
   tenantUsers.forEach((u) => {
-    sectorCount[u.sector] = (sectorCount[u.sector] || 0) + 2;
+    const sec = u.sector || "Geral";
+    sectorCount[sec] = (sectorCount[sec] || 0) + 1;
   });
 
   const sectorDistribution = Object.entries(sectorCount).map(([name, value]) => ({
@@ -1631,17 +1315,28 @@ app.get("/api/dashboard/metrics", (req, res) => {
     value,
   }));
 
+  const requestLimit = tenant?.monthlyRequestLimit || 10000;
+  const storageLimit = tenant?.storageLimitGb || 10;
+
+  const formattedTokens =
+    totalTokens > 1000000
+      ? `${(totalTokens / 1000000).toFixed(2)}M`
+      : totalTokens > 1000
+      ? `${(totalTokens / 1000).toFixed(1)}k`
+      : `${totalTokens}`;
+
   res.json({
     metrics: {
       monthlyRequests: {
         value: totalRequests,
-        limit: tenant.monthlyRequestLimit,
-        percentage: Math.min(100, Math.round((totalRequests / tenant.monthlyRequestLimit) * 100)),
+        limit: requestLimit,
+        percentage: Math.min(100, Math.round((totalRequests / requestLimit) * 100)),
       },
       storageUsed: {
         valueGb: storageUsedGb,
-        limitGb: tenant.storageLimitGb,
-        percentage: Math.min(100, Math.round((storageUsedGb / tenant.storageLimitGb) * 100)),
+        limitGb: storageLimit,
+        percentage: Math.min(100, Math.round((storageUsedGb / storageLimit) * 100)),
+        docsCount: tenantDocs.length,
       },
       activeUsers: {
         count: activeUsersCount,
@@ -1649,16 +1344,11 @@ app.get("/api/dashboard/metrics", (req, res) => {
       },
       tokensConsumed: {
         total: totalTokens,
-        formatted: `${(totalTokens / 1000).toFixed(1)}k`,
+        formatted: `${formattedTokens} tokens`,
       },
     },
     requestsByHour,
-    sectorDistribution: sectorDistribution.length > 0 ? sectorDistribution : [
-      { name: "Tecnologia & IA", value: 45 },
-      { name: "Financeiro", value: 25 },
-      { name: "Suporte", value: 18 },
-      { name: "Marketing", value: 12 },
-    ],
+    sectorDistribution,
     recentLogs: tenantLogs.slice(0, 5),
   });
 });

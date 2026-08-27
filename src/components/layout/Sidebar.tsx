@@ -70,16 +70,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: "Chat Interno",
       sublabel: "Comunicação Setorial",
       icon: MessageSquare,
-      badge: "3",
-      badgeColor: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30",
+      badge: undefined,
     },
     {
       id: "knowledge_base" as NavTab,
       label: "Base de Conhecimento",
       sublabel: "Documentos & RAG",
       icon: BookOpen,
-      badge: "5 Docs",
-      badgeColor: "bg-slate-500/10 text-slate-400 border border-slate-500/20",
+      badge: undefined,
     },
     {
       id: "agenda" as NavTab,
@@ -252,7 +250,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               Uso da API de IA
             </span>
             <span className="text-[11px] text-slate-400">
-              {tenant ? Math.round((tenant.currentRequests / tenant.monthlyRequestLimit) * 100) : 84}%
+              {tenant ? Math.min(100, Math.round(((tenant.currentRequests || 0) / (tenant.monthlyRequestLimit || 10000)) * 100)) : 0}%
             </span>
           </div>
 
@@ -260,14 +258,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div
               className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500"
               style={{
-                width: `${tenant ? (tenant.currentRequests / tenant.monthlyRequestLimit) * 100 : 84.5}%`,
+                width: `${tenant ? Math.min(100, ((tenant.currentRequests || 0) / (tenant.monthlyRequestLimit || 10000)) * 100) : 0}%`,
               }}
             />
           </div>
 
           <div className="flex items-center justify-between text-[10px] text-slate-400">
-            <span>{tenant?.currentRequests.toLocaleString()} reqs</span>
-            <span>Limite: {tenant?.monthlyRequestLimit.toLocaleString()}</span>
+            <span>{(tenant?.currentRequests || 0).toLocaleString()} reqs</span>
+            <span>Limite: {(tenant?.monthlyRequestLimit || 10000).toLocaleString()}</span>
           </div>
         </div>
       )}

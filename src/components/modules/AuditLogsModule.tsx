@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   ShieldAlert,
   ShieldCheck,
@@ -15,99 +15,80 @@ import {
   User,
   FileCode,
   FileSpreadsheet,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { AuditLog } from "../../types";
 import { cn, formatDateBR } from "../../lib/utils";
+import { getAuditLogsFromDb } from "../../services/supabaseDb";
 
 export const AuditLogsModule: React.FC = () => {
   const { user, canAccessAuditLogs } = useAuth();
   const isMasterAdmin = canAccessAuditLogs || user?.role === "master_admin";
 
-  const [logs, setLogs] = useState<AuditLog[]>([
-    {
-      id: "log_01",
-      userId: "usr_master_01",
-      userName: "Rodrigo Alencar",
-      userRole: "master_admin",
-      action: "AUTH_LOGIN_SUCCESS",
-      resource: "Supabase JWT Gateway",
-      ip: "189.120.45.12",
-      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-      timestamp: "2026-08-26T10:14:22Z",
-      status: "success",
-      metadata: { method: "magic_link", role: "master_admin" },
-    },
-    {
-      id: "log_02",
-      userId: "usr_admin_01",
-      userName: "Helena Beatriz Costa",
-      userRole: "admin",
-      action: "RAG_DOC_INDEX",
-      resource: "Politica_Seguranca_Informacao_2026.pdf",
-      ip: "177.85.210.99",
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-      timestamp: "2026-08-26T09:45:10Z",
-      status: "success",
-      metadata: { tokens: 14200, latencyMs: 120 },
-    },
-    {
-      id: "log_03",
-      userId: "usr_user_01",
-      userName: "Carlos Eduardo Silva",
-      userRole: "user",
-      action: "GEMINI_CHAT_PROMPT",
-      resource: "OpenJarvis /api/gemini/chat",
-      ip: "201.33.104.55",
-      userAgent: "Mozilla/5.0 (X11; Linux x86_64)",
-      timestamp: "2026-08-26T09:20:00Z",
-      status: "success",
-      metadata: { ragUsed: true, tokens: 840 },
-    },
-    {
-      id: "log_04",
-      userId: "usr_anon_99",
-      userName: "Desconhecido",
-      userRole: "user",
-      action: "UNAUTHORIZED_ACCESS_ATTEMPT",
-      resource: "/api/audit-logs",
-      ip: "45.142.122.18",
-      userAgent: "Python-urllib/3.9",
-      timestamp: "2026-08-26T08:12:44Z",
-      status: "failed",
-      metadata: { reason: "Invalid JWT signature" },
-    },
-    {
-      id: "log_05",
-      userId: "usr_user_02",
-      userName: "Mariana Souza Lima",
-      userRole: "user",
-      action: "DOCUMENT_VIEW_RAG",
-      resource: "Playbook_Atendimento_SLA_Suporte.pdf",
-      ip: "189.44.11.200",
-      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4)",
-      timestamp: "2026-08-26T07:50:12Z",
-      status: "success",
-      metadata: { sector: "Suporte ao Cliente & CS" },
-    },
-    {
-      id: "log_06",
-      userId: "usr_admin_01",
-      userName: "Helena Beatriz Costa",
-      userRole: "admin",
-      action: "CONFIG_UPDATE_WHITELABEL",
-      resource: "Tenant Configuration",
-      ip: "177.85.210.99",
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-      timestamp: "2026-08-25T18:22:00Z",
-      status: "success",
-      metadata: { primaryColor: "#2563eb", brandName: "Nexus Enterprise" },
-    },
-  ]);
-
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
   const [actionFilter, setActionFilter] = useState<string>("all");
+
+  const loadLogs = useCallback(async () => {
+    setIsLoading(true);
+    const tenantId = user?.tenantId || "tenant_omni_01";
+
+    try {
+      // 1. Try fetching directly from Supabase
+      const dbLogs = await getAuditLogsFromDb(tenantId);
+      if (dbLogs && dbLogs.length > 0) {
+        setLogs(dbLogs);
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Fallback to server API
+      const res = await fetch(`/api/audit-logs?tenantId=${encodeURIComponent(tenantId)}`, {
+        headers: {
+          "x-user-role": user?.role || "master_admin",
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs) {
+          setLogs(
+            data.logs.map((l: any) => ({
+              id: l.id,
+              userId: l.userId || "usr_anon",
+              userName: l.userName || "Colaborador",
+              userRole: l.userRole || "user",
+              action: l.action || "SYSTEM_EVENT",
+              resource: l.details || l.resource || "Sistema",
+              ip: l.ipAddress || l.ip || "127.0.0.1",
+              userAgent: "OmniJarvis Gateway",
+              timestamp: l.timestamp || new Date().toISOString(),
+              status: l.status === "denied" || l.status === "failed" ? "failed" : "success",
+              metadata: l.metadata || {},
+            }))
+          );
+        } else {
+          setLogs([]);
+        }
+      } else {
+        setLogs([]);
+      }
+    } catch (err) {
+      console.warn("Could not load real audit logs:", err);
+      setLogs([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.tenantId, user?.role]);
+
+  useEffect(() => {
+    if (isMasterAdmin) {
+      loadLogs();
+    }
+  }, [isMasterAdmin, loadLogs]);
 
   // RBAC Access Guard: If not master_admin, show restricted access screen
   if (!isMasterAdmin) {
@@ -195,8 +176,19 @@ export const AuditLogsModule: React.FC = () => {
           </p>
         </div>
 
-        {/* Export Buttons */}
+        {/* Export and Refresh Buttons */}
         <div className="flex items-center gap-2">
+          <button
+            id="btn-refresh-audit-logs"
+            onClick={loadLogs}
+            disabled={isLoading}
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            title="Atualizar Logs em Tempo Real"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5 text-slate-400", isLoading && "animate-spin text-purple-400")} />
+            <span>{isLoading ? "Carregando..." : "Atualizar"}</span>
+          </button>
+
           <button
             id="btn-export-logs-json"
             onClick={exportAsJSON}

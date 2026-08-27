@@ -561,3 +561,115 @@ export async function deleteKnowledgeBaseDocFromDb(docId: string): Promise<boole
     return false;
   }
 }
+
+/**
+ * Audit Logs: Fetch from Supabase
+ */
+export async function getAuditLogsFromDb(tenantId: string): Promise<any[]> {
+  if (!isSupabaseConfigured) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from("audit_logs")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (error || !data) return [];
+
+    return data.map((log: any) => ({
+      id: log.id,
+      userId: log.user_id || "usr_anonymous",
+      userName: log.user_name || "Colaborador",
+      userRole: log.user_role || "user",
+      action: log.action || "SYSTEM_ACTION",
+      resource: log.resource || log.action || "Gateway",
+      ip: log.ip_address || "127.0.0.1",
+      userAgent: log.user_agent || "Client Browser",
+      timestamp: log.created_at || new Date().toISOString(),
+      status: log.status || "success",
+      metadata: log.metadata || {},
+    }));
+  } catch (err) {
+    console.warn("Could not load audit logs from Supabase:", err);
+    return [];
+  }
+}
+
+/**
+ * Audit Logs: Save to Supabase
+ */
+export async function saveAuditLogToDb(log: {
+  id?: string;
+  tenantId: string;
+  userId?: string;
+  userName?: string;
+  userEmail?: string;
+  userRole?: string;
+  action: string;
+  resource?: string;
+  status?: string;
+  ip?: string;
+  metadata?: any;
+}): Promise<boolean> {
+  if (!isSupabaseConfigured) return false;
+
+  try {
+    const { error } = await supabase.from("audit_logs").insert({
+      id: log.id || `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      tenant_id: log.tenantId,
+      user_id: log.userId || null,
+      user_name: log.userName || null,
+      user_role: log.userRole || null,
+      action: log.action,
+      resource: log.resource || null,
+      status: log.status || "success",
+      ip_address: log.ip || "127.0.0.1",
+      metadata: log.metadata || null,
+      created_at: new Date().toISOString(),
+    });
+
+    return !error;
+  } catch (err) {
+    console.warn("Could not insert audit log into Supabase:", err);
+    return false;
+  }
+}
+
+/**
+ * Profiles/Users: Fetch from Supabase
+ */
+export async function getTeamProfilesFromDb(tenantId: string): Promise<User[]> {
+  if (!isSupabaseConfigured) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("name", { ascending: true });
+
+    if (error || !data) return [];
+
+    return data.map((p: any) => ({
+      id: p.id,
+      name: p.name || p.email?.split("@")[0] || "Colaborador",
+      email: p.email || "",
+      role: p.role || "user",
+      tenantId: p.tenant_id || tenantId,
+      tenantName: p.tenant_name || "Sua Empresa",
+      avatar:
+        p.avatar_url ||
+        p.avatar ||
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      sector: p.sector || "Geral",
+      status: p.status || "online",
+      createdAt: p.created_at || new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.warn("Could not load profiles from Supabase:", err);
+    return [];
+  }
+}
+
