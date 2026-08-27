@@ -29,7 +29,6 @@ import {
   Globe,
   Compass,
   Search,
-  Cpu,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { OpenJarvisMessage, RagCitation, WebSearchQuotaInfo } from "../../types";
@@ -45,24 +44,7 @@ interface AiChatModuleProps {
 export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }) => {
   const { user, tenant, token } = useAuth();
 
-  const [messages, setMessages] = useState<OpenJarvisMessage[]>([
-    {
-      id: "msg_init",
-      sender: "assistant",
-      text: `Olá ${user?.name || "Colaborador"}! Sou o **OpenJarvis** (motor local **Ollama**), assistente corporativo inteligente da **${tenant?.name || "Nexus Enterprise"}**.\n\nEstou conectado à sua **Base de Conhecimento Corporativa (RAG)** e ao módulo **ProJarvis (Pesquisa Web em Tempo Real)**. Como posso ajudar você hoje?`,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      ragConsulted: true,
-      ragSources: [
-        {
-          docId: "doc_01",
-          docName: "Politica_Seguranca_Informacao_2026.pdf",
-          snippet: "Diretrizes de conformidade LGPD, controle de acesso RBAC e criptografia.",
-          sector: "Tecnologia",
-          similarity: 0.96,
-        },
-      ],
-    },
-  ]);
+  const [messages, setMessages] = useState<OpenJarvisMessage[]>([]);
 
   const [inputPrompt, setInputPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -360,14 +342,14 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         token: token || undefined,
         onWebSearchQuotaExceeded: (qInfo) => {
           setWebSearchAlert(
-            `⚠️ Cota individual de Pesquisa Web atingida (${qInfo.webSearchUsed}/${qInfo.webSearchLimit} buscas diárias baseadas nos ${qInfo.activeUsersCount} usuários ativos). A mensagem foi respondida normalmente pelo motor Ollama Local.`
+            `⚠️ Cota individual de Pesquisa Web atingida (${qInfo.webSearchUsed}/${qInfo.webSearchLimit} buscas diárias). A resposta foi gerada utilizando a Base de Conhecimento interna.`
           );
         },
       });
 
       if (data.webSearchQuotaExceeded) {
         setWebSearchAlert(
-          "⚠️ Cota de Pesquisa Web ProJarvis esgotada para hoje. Resposta gerada utilizando o motor Ollama Local e a Base de Conhecimento interna."
+          "⚠️ Cota de Pesquisa Web esgotada para hoje. Resposta gerada utilizando a Base de Conhecimento interna."
         );
       }
 
@@ -438,7 +420,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       setIsGenerating(false);
       const errorMessage =
         err?.message ||
-        "Desculpe, ocorreu uma instabilidade na conexão com o motor OpenJarvis. Verifique se o servidor Ollama (porta 11434) ou SearXNG (porta 8080) estão em execução.";
+        "Desculpe, ocorreu uma instabilidade na conexão com o assistente inteligente. Por favor, tente novamente.";
       setMessages((prev) => [
         ...prev,
         {
@@ -523,14 +505,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
   };
 
   const clearChat = () => {
-    setMessages([
-      {
-        id: `init_${Date.now()}`,
-        sender: "assistant",
-        text: `Histórico limpo. Como posso ajudar você agora, ${user?.name ?? "Colaborador"}?`,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      },
-    ]);
+    setMessages([]);
   };
 
   return (
@@ -546,19 +521,19 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
               <span className="font-bold text-sm text-slate-900 dark:text-white">
                 OmniJarvis IA
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20 flex items-center gap-1">
-                <Cpu className="w-3 h-3" />
-                Ollama Local + RAG
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold border border-blue-500/20 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                Assistente Corporativo
               </span>
               {isWebSearchEnabled && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold border border-blue-500/20 flex items-center gap-1 animate-pulse">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-500/20 flex items-center gap-1 animate-pulse">
                   <Globe className="w-3 h-3" />
-                  ProJarvis Web
+                  Pesquisa Web Ativa
                 </span>
               )}
             </div>
             <div className="text-[11px] text-slate-400">
-              Motor Ollama local de documentos + Pesquisa Web ProJarvis em tempo real
+              Assistente inteligente integrado à Base de Conhecimento e Pesquisa Corporativa
             </div>
           </div>
         </div>
@@ -726,7 +701,47 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
       {/* Messages Scroll Area */}
       <div className="flex-1 p-4 md:p-6 overflow-y-auto space-y-6">
-        {messages.map((msg) => {
+        {messages.length === 0 ? (
+          <div className="h-full min-h-[280px] flex flex-col items-center justify-center text-center p-6 max-w-lg mx-auto animate-in fade-in duration-300">
+            <div className="w-12 h-12 rounded-2xl bg-blue-600/10 dark:bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3 shadow-xs">
+              <Bot className="w-6 h-6" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-1">
+              OmniJarvis IA Corporativa
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 max-w-sm">
+              Assistente conectado à Base de Conhecimento (RAG) e ao módulo ProJarvis de pesquisa em tempo real.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left">
+              <button
+                type="button"
+                onClick={() => setInputPrompt("Como estão estruturadas as diretrizes corporativas?")}
+                className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs text-slate-700 dark:text-slate-200 group cursor-pointer shadow-2xs"
+              >
+                <div className="font-medium text-slate-900 dark:text-white group-hover:text-blue-500 flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-blue-500" />
+                  Base de Conhecimento
+                </div>
+                <div className="text-[11px] text-slate-400 mt-1">Consultar documentos indexados via RAG</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsWebSearchEnabled(true);
+                  setInputPrompt("Pesquisar as principais novidades e tendências de mercado para o nosso setor");
+                }}
+                className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs text-slate-700 dark:text-slate-200 group cursor-pointer shadow-2xs"
+              >
+                <div className="font-medium text-slate-900 dark:text-white group-hover:text-indigo-500 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-indigo-500" />
+                  Pesquisa Web ProJarvis
+                </div>
+                <div className="text-[11px] text-slate-400 mt-1">Buscar informações atualizadas em tempo real</div>
+              </button>
+            </div>
+          </div>
+        ) : (
+          messages.map((msg) => {
           const isUser = msg.sender === "user";
 
           return (
@@ -959,7 +974,8 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
               </div>
             </div>
           );
-        })}
+        })
+      )}
 
         {isGenerating && (
           <div className="flex items-center gap-3 max-w-md">
@@ -970,8 +986,8 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
               <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-ping" />
               <span>
                 {isWebSearchEnabled
-                  ? "OpenJarvis buscando na Web via ProJarvis e processando com Ollama..."
-                  : "OpenJarvis consultando base de conhecimento e gerando resposta..."}
+                  ? "Buscando informações na Web e sintetizando resposta..."
+                  : "Consultando base de conhecimento e gerando resposta..."}
               </span>
             </div>
           </div>
@@ -1004,8 +1020,8 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                   : isRecording
                   ? "🎙️ Gravando sua voz... Fale agora!"
                   : isWebSearchEnabled
-                  ? "Pergunte com Pesquisa Web ProJarvis ativada (notícias, tendências, web)..."
-                  : "Pergunte ao OmniJarvis (Ollama Local) sobre documentos, finanças, processos..."
+                  ? "Pergunte com Pesquisa Web ativada (notícias, mercado, dados atualizados)..."
+                  : "Pergunte ao OmniJarvis sobre documentos, diretrizes, processos..."
               }
               className={cn(
                 "w-full pl-4 pr-24 py-3 text-xs md:text-sm rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-none transition-all disabled:opacity-60 disabled:cursor-not-allowed",
@@ -1062,17 +1078,12 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
           <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
             <div className="flex items-center gap-2">
               <span>Shift + Enter para quebra de linha</span>
-              <span>•</span>
-              <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
-                <Cpu className="w-3 h-3 text-emerald-500" />
-                Ollama Local RAG ilimitado
-              </span>
               {isWebSearchEnabled && (
                 <>
                   <span>•</span>
                   <span className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-medium">
                     <Globe className="w-3 h-3" />
-                    ProJarvis: {webSearchQuota ? `${webSearchQuota.webSearchUsed}/${webSearchQuota.webSearchLimit} hoje` : "Ativo"}
+                    Pesquisa Web: {webSearchQuota ? `${webSearchQuota.webSearchUsed}/${webSearchQuota.webSearchLimit} hoje` : "Ativa"}
                   </span>
                 </>
               )}
