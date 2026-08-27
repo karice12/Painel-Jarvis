@@ -57,7 +57,7 @@ const DB: DBStructure = {
       themeMode: "dark",
       monthlyRequestLimit: 10000,
       currentRequests: 0,
-      storageLimitGb: 10,
+      storageLimitGb: 30,
       currentStorageGb: 0,
       apiKeyMasked: "omni_live_98fc************3a21",
       webhookUrl: "",
@@ -1316,7 +1316,7 @@ app.get("/api/dashboard/metrics", (req, res) => {
   }));
 
   const requestLimit = tenant?.monthlyRequestLimit || 10000;
-  const storageLimit = tenant?.storageLimitGb || 10;
+  const storageLimit = tenant?.storageLimitGb || 30;
 
   const formattedTokens =
     totalTokens > 1000000

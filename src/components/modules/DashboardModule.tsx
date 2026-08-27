@@ -12,19 +12,18 @@ import {
   Cell,
 } from "recharts";
 import {
-  Sparkles,
   Database,
   Users,
   Cpu,
-  TrendingUp,
-  AlertTriangle,
-  Clock,
   ShieldCheck,
   CheckCircle2,
-  Server,
   Zap,
   RefreshCw,
   Info,
+  Coins,
+  ArrowDownRight,
+  Calculator,
+  Layers,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { cn } from "../../lib/utils";
@@ -48,7 +47,7 @@ export const DashboardModule: React.FC = () => {
     },
     storageUsed: {
       valueGb: 0,
-      limitGb: tenant?.storageLimitGb || 10,
+      limitGb: 30,
       percentage: 0,
       docsCount: 0,
     },
@@ -77,7 +76,11 @@ export const DashboardModule: React.FC = () => {
         startTransition(() => {
           setMetrics({
             monthlyRequests: supabaseData.monthlyRequests,
-            storageUsed: supabaseData.storageUsed,
+            storageUsed: {
+              ...supabaseData.storageUsed,
+              limitGb: 30,
+              percentage: Math.min(100, Math.round((supabaseData.storageUsed.valueGb / 30) * 100)),
+            },
             activeUsers: supabaseData.activeUsers,
             tokensConsumed: supabaseData.tokensConsumed,
           });
@@ -111,7 +114,16 @@ export const DashboardModule: React.FC = () => {
         const res = await fetch(`/api/dashboard/metrics?tenantId=${tenant.id}`);
         if (res.ok) {
           const data = await res.json();
-          if (data.metrics) setMetrics(data.metrics);
+          if (data.metrics) {
+            setMetrics({
+              ...data.metrics,
+              storageUsed: {
+                ...data.metrics.storageUsed,
+                limitGb: 30,
+                percentage: Math.min(100, Math.round(((data.metrics.storageUsed?.valueGb || 0) / 30) * 100)),
+              },
+            });
+          }
           if (data.requestsByHour) setHourlyData(data.requestsByHour);
           if (data.sectorDistribution) {
             setSectorData(
@@ -146,10 +158,16 @@ export const DashboardModule: React.FC = () => {
   };
 
   const currentReqs = metrics.monthlyRequests.value;
-  const limitReqs = metrics.monthlyRequests.limit || 10000;
-  const quotaPercent = Math.min(100, Math.round((currentReqs / (limitReqs || 1)) * 100));
-
+  const totalTokens = metrics.tokensConsumed.total;
   const totalSectorValue = sectorData.reduce((sum, item) => sum + item.value, 0);
+
+  // Estimativas de Mercado em APIs de Terceiros (OpenAI GPT-4o / Claude 3.5 Sonnet / Gemini Pro)
+  // Custo médio de RAG corporativo em APIs comerciais: ~R$ 0,12 por requisição completa (Prompt + Contexto RAG + Completion)
+  // Custo médio por 1M tokens em APIs comerciais: ~R$ 18,50 (entrada + saída ponderada)
+  const estimatedCostPerReqThirdParty = 0.12; // R$ 0,12 por requisição
+  const estimatedMarketCostBRL = currentReqs > 0
+    ? Number((currentReqs * estimatedCostPerReqThirdParty).toFixed(2))
+    : Number(((totalTokens / 1000) * 0.015).toFixed(2));
 
   return (
     <div id="dashboard-module-container" className="space-y-6 pb-8">
@@ -161,13 +179,13 @@ export const DashboardModule: React.FC = () => {
           <div>
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-medium border border-blue-500/30 mb-2">
               <Zap className="w-3.5 h-3.5 text-blue-400" />
-              Empresa: {tenant?.name || "Nexus Enterprise"}
+              Empresa: {tenant?.name || "Sua Empresa S.A."}
             </div>
             <h2 className="text-xl md:text-2xl font-bold tracking-tight">
               Olá, {user?.name || "Colaborador"}! Painel de Operações Supabase & IA
             </h2>
             <p className="text-xs md:text-sm text-slate-300 mt-1 max-w-2xl">
-              Monitoramento em tempo real de chamadas, armazenamento de documentos RAG e volumetria por setor.
+              Monitoramento em tempo real de armazenamento de documentos RAG, colaboradores e demonstrativo de custos de IA.
             </p>
           </div>
 
@@ -196,39 +214,12 @@ export const DashboardModule: React.FC = () => {
         </div>
       </div>
 
-      {/* 4 Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Metric 1: Requisições IA */}
-        <div
-          id="metric-card-requests"
-          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-blue-500/40 transition-all"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              Total de Requisições IA
-            </span>
-            <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
-              <Sparkles className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">
-              {loading ? "..." : currentReqs.toLocaleString()}
-            </span>
-            <span className="text-xs font-medium text-slate-400">
-              / {limitReqs.toLocaleString()}
-            </span>
-          </div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-            <TrendingUp className="w-3.5 h-3.5 text-blue-500" />
-            <span>{quotaPercent}% da cota consumida</span>
-          </div>
-        </div>
-
-        {/* Metric 2: Armazenamento RAG */}
+      {/* 3 Metric Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Metric 1: Armazenamento RAG (Configurado para 30 GB) */}
         <div
           id="metric-card-storage"
-          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-emerald-500/40 transition-all"
+          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-emerald-500/40 transition-all flex flex-col justify-between"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -243,18 +234,30 @@ export const DashboardModule: React.FC = () => {
               {loading ? "..." : `${metrics.storageUsed.valueGb} GB`}
             </span>
             <span className="text-xs font-medium text-slate-400">
-              / {metrics.storageUsed.limitGb} GB
+              / 30 GB
             </span>
           </div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-            <span>{metrics.storageUsed.docsCount} documento(s) indexado(s)</span>
+
+          <div className="mt-3">
+            <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden mb-2">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(1, (metrics.storageUsed.valueGb / 30) * 100))}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span>{metrics.storageUsed.docsCount} documento(s) indexado(s)</span>
+              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                {((metrics.storageUsed.valueGb / 30) * 100).toFixed(1)}% ocupado
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Metric 3: Usuários Ativos */}
+        {/* Metric 2: Usuários Ativos */}
         <div
           id="metric-card-users"
-          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-purple-500/40 transition-all"
+          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-purple-500/40 transition-all flex flex-col justify-between"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -268,22 +271,25 @@ export const DashboardModule: React.FC = () => {
             <span className="text-2xl font-bold text-slate-900 dark:text-white">
               {loading ? "..." : metrics.activeUsers.total}
             </span>
-            <span className="text-xs font-medium text-slate-400">membros registrados</span>
+            <span className="text-xs font-medium text-slate-400">membros cadastrados</span>
           </div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>{metrics.activeUsers.count} conectado(s) agora</span>
+          <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{metrics.activeUsers.count} conectado(s) agora</span>
+            </div>
+            <span className="text-slate-400">Isolamento Supabase RLS</span>
           </div>
         </div>
 
-        {/* Metric 4: Tokens Consumidos */}
+        {/* Metric 3: Tokens Consumidos & Demonstrativo de Custo */}
         <div
           id="metric-card-tokens"
-          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-amber-500/40 transition-all"
+          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-amber-500/40 transition-all flex flex-col justify-between"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              Tokens Consumidos
+              Tokens Processados
             </span>
             <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
               <Cpu className="w-4 h-4" />
@@ -295,61 +301,107 @@ export const DashboardModule: React.FC = () => {
             </span>
             <span className="text-xs font-medium text-slate-400">tokens</span>
           </div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-            <span>{metrics.tokensConsumed.total.toLocaleString()} total no ciclo</span>
+          <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <span>{totalTokens.toLocaleString()} acumulados</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+              <Coins className="w-3.5 h-3.5" />
+              Custo Zero por Token
+            </span>
           </div>
         </div>
       </div>
 
-      {/* API Quota Consumption Bar */}
+      {/* Demonstrativo de Custo & Economia em Relação a APIs de Terceiros */}
       <div
-        id="api-quota-bar-card"
-        className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs"
+        id="third-party-cost-demonstrative-card"
+        className="p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 text-white shadow-sm"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-          <div className="flex items-center gap-2">
-            <Server className="w-4 h-4 text-blue-500" />
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              Consumo do Limite da API ({currentReqs.toLocaleString()} / {limitReqs.toLocaleString()} requisições)
-            </h3>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Calculator className="w-4 h-4 text-blue-400" />
+              <h3 className="text-sm font-bold text-white">
+                Demonstrativo de Custos: APIs Comerciais de Terceiros vs. OmniJarvis
+              </h3>
+            </div>
+            <p className="text-xs text-slate-400">
+              Estimativa transparente do valor que sua empresa estaria pagando ao utilizar APIs pagas por requisição/token de terceiros (ex: OpenAI GPT-4o, Claude 3.5 Sonnet, Gemini Comercial).
+            </p>
           </div>
-          <div className="flex items-center gap-2 text-xs">
-            {quotaPercent >= 80 ? (
-              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-semibold">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Cota próxima do limite ({quotaPercent}%)
-              </span>
-            ) : (
-              <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Dentro dos limites operacionais
-              </span>
-            )}
-            <span className="text-slate-400 flex items-center gap-1 ml-2">
-              <Clock className="w-3 h-3" />
-              Ciclo Mensal
+
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold shrink-0">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>100% de Economia por Chamada</span>
+          </div>
+        </div>
+
+        {/* Comparison Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-5">
+          {/* Box 1: Custo Estimado em Terceiros */}
+          <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+            <span className="text-[11px] font-medium text-slate-400 block mb-1">
+              Custo Estimado em APIs de Terceiros
+            </span>
+            <div className="text-xl font-bold text-amber-400 font-mono">
+              R$ {estimatedMarketCostBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">
+              Base de ~R$ 0,12 / requisição RAG
+            </span>
+          </div>
+
+          {/* Box 2: Preço Médio por Requisição Externa */}
+          <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+            <span className="text-[11px] font-medium text-slate-400 block mb-1">
+              Valor Médio em APIs Comerciais
+            </span>
+            <div className="text-xl font-bold text-slate-200 font-mono">
+              ~R$ 0,10 - R$ 0,18
+            </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">
+              Por consulta com contexto RAG indexado
+            </span>
+          </div>
+
+          {/* Box 3: Custo com OmniJarvis Interno */}
+          <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/30">
+            <span className="text-[11px] font-medium text-emerald-300 block mb-1">
+              Custo na sua Organização
+            </span>
+            <div className="text-xl font-bold text-emerald-400 font-mono">
+              R$ 0,00
+            </div>
+            <span className="text-[10px] text-emerald-300/80 mt-1 block">
+              Sem cobrança por token excedente
+            </span>
+          </div>
+
+          {/* Box 4: Economia Líquida */}
+          <div className="p-4 rounded-2xl bg-blue-950/40 border border-blue-500/30">
+            <span className="text-[11px] font-medium text-blue-300 block mb-1">
+              Custo Evitado / Economia
+            </span>
+            <div className="text-xl font-bold text-blue-400 font-mono flex items-center gap-1">
+              <ArrowDownRight className="w-4 h-4 text-emerald-400" />
+              R$ {estimatedMarketCostBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <span className="text-[10px] text-blue-300/80 mt-1 block">
+              Economizado nesta operação
             </span>
           </div>
         </div>
 
-        {/* Progress bar */}
-        <div className="w-full bg-slate-100 dark:bg-slate-800 h-3 rounded-full overflow-hidden p-0.5">
-          <div
-            className={cn(
-              "h-full rounded-full transition-all duration-500",
-              quotaPercent > 80
-                ? "bg-gradient-to-r from-amber-500 to-rose-500"
-                : "bg-gradient-to-r from-blue-500 to-indigo-600"
-            )}
-            style={{ width: `${Math.max(1, quotaPercent)}%` }}
-          />
-        </div>
-
-        <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-          <span>{quotaPercent}% da cota mensal utilizada</span>
-          <span className="text-slate-400">
-            {Math.max(0, limitReqs - currentReqs).toLocaleString()} requisições restantes
-          </span>
+        {/* Detailed Breakdown Note */}
+        <div className="mt-4 p-3.5 rounded-2xl bg-slate-800/40 border border-slate-700/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-blue-400 shrink-0" />
+            <span>
+              <strong>Referência de Cálculo:</strong> Cada requisição com RAG consome em média 1.200 a 2.500 tokens (documentos vetorizados + prompt do colaborador + resposta). Em plataformas comerciais como OpenAI ou Claude, isso custaria aproximadamente $0,02 USD (~R$ 0,12 BRL) por chamada.
+            </span>
+          </div>
+          <div className="text-[11px] font-semibold text-slate-300 whitespace-nowrap">
+            Processamento Dedicado Corporativo
+          </div>
         </div>
       </div>
 
@@ -360,7 +412,7 @@ export const DashboardModule: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Fluxo de Requisições por Horário
+                Fluxo de Operações por Horário
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
                 Volumetria de chamadas registradas no banco de dados

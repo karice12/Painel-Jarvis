@@ -36,7 +36,7 @@ const DEFAULT_FALLBACK_TENANT: TenantConfig = {
   themeMode: "dark",
   monthlyRequestLimit: 10000,
   currentRequests: 0,
-  storageLimitGb: 10,
+  storageLimitGb: 30,
   currentStorageGb: 0,
   apiKeyMasked: "omni_live_98fc************3a21",
   webhookUrl: "https://api.nexus.com.br/webhooks/openjarvis",
