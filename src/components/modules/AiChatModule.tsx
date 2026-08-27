@@ -394,6 +394,13 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       // Update Web Search quota locally
       fetchQuotaStatus();
 
+      // Dispatch global event for instant dashboard request counting and cost savings update
+      window.dispatchEvent(
+        new CustomEvent("omnijarvis_request_completed", {
+          detail: { tokensUsed: data.tokensUsed || 150, tenantId: tenant?.id },
+        })
+      );
+
       // Create empty assistant message for typewriter effect
       setMessages((prev) => [
         ...prev,

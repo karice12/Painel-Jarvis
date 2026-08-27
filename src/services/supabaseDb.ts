@@ -95,7 +95,8 @@ export async function getRealDashboardMetrics(
       .select("id, tokens_used, created_at, user_name, user_sector, sender", { count: "exact" })
       .eq("tenant_id", tenantId);
 
-    const totalRequests = metricRecord?.total_requests ?? (aiCount || 0);
+    const userRequestsCount = (aiMsgs || []).filter((m: any) => m.sender === "user").length;
+    const totalRequests = metricRecord?.total_requests ?? (userRequestsCount > 0 ? userRequestsCount : (aiCount || 0));
     const requestsPercent = Math.min(100, Math.round((totalRequests / requestLimit) * 100));
 
     const totalTokens = (aiMsgs || []).reduce((acc, m) => acc + (m.tokens_used || 0), 0);

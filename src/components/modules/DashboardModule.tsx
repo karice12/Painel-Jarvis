@@ -14,16 +14,15 @@ import {
 import {
   Database,
   Users,
-  Cpu,
   ShieldCheck,
   CheckCircle2,
-  Zap,
   RefreshCw,
   Info,
-  Coins,
   ArrowDownRight,
   Calculator,
   Layers,
+  AlertTriangle,
+  Headphones,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { cn } from "../../lib/utils";
@@ -32,7 +31,7 @@ import { getRealDashboardMetrics, DashboardMetricsData } from "../../services/su
 const SECTOR_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4"];
 
 export const DashboardModule: React.FC = () => {
-  const { tenant, user, aiLatencyMs } = useAuth();
+  const { tenant, user } = useAuth();
   const [, startTransition] = useTransition();
 
   const [loading, setLoading] = useState(true);
@@ -148,8 +147,18 @@ export const DashboardModule: React.FC = () => {
 
   useEffect(() => {
     fetchMetrics();
-    const interval = setInterval(fetchMetrics, 20000);
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchMetrics, 15000);
+
+    // Auto-update dashboard metrics whenever an AI request is made in the system
+    const handleRequestCompleted = () => {
+      fetchMetrics();
+    };
+    window.addEventListener("omnijarvis_request_completed", handleRequestCompleted);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("omnijarvis_request_completed", handleRequestCompleted);
+    };
   }, [tenant?.id]);
 
   const handleManualRefresh = () => {
@@ -160,77 +169,74 @@ export const DashboardModule: React.FC = () => {
   const currentReqs = metrics.monthlyRequests.value;
   const totalTokens = metrics.tokensConsumed.total;
   const totalSectorValue = sectorData.reduce((sum, item) => sum + item.value, 0);
+  const isStorageWarning = (metrics.storageUsed?.valueGb || 0) >= 25;
 
   // Estimativas de Mercado em APIs de Terceiros (OpenAI GPT-4o / Claude 3.5 Sonnet / Gemini Pro)
-  // Custo médio de RAG corporativo em APIs comerciais: ~R$ 0,12 por requisição completa (Prompt + Contexto RAG + Completion)
-  // Custo médio por 1M tokens em APIs comerciais: ~R$ 18,50 (entrada + saída ponderada)
-  const estimatedCostPerReqThirdParty = 0.12; // R$ 0,12 por requisição
-  const estimatedMarketCostBRL = currentReqs > 0
-    ? Number((currentReqs * estimatedCostPerReqThirdParty).toFixed(2))
-    : Number(((totalTokens / 1000) * 0.015).toFixed(2));
+  // Plataformas de terceiros cobram estritamente em DÓLAR AMERICANO (USD / $)
+  // Custo médio de mercado por requisição corporativa com RAG: ~ $0.025 USD por chamada (Prompt + Contexto RAG + Completion)
+  // Cotação cambial de referência comercial: 1 USD ≈ R$ 5,80 BRL
+  const USD_BRL_RATE = 5.80;
+  const COST_PER_REQ_USD = 0.025; // $ 0.025 USD por pedido/requisição
+  const COST_PER_REQ_BRL = Number((COST_PER_REQ_USD * USD_BRL_RATE).toFixed(3)); // ~ R$ 0.145 BRL
+
+  // Cada pedido ao Jarvis contabiliza no valor estimado em Dólar e Real
+  const estimatedMarketCostUSD = Number((currentReqs * COST_PER_REQ_USD).toFixed(2));
+  const estimatedMarketCostBRL = Number((estimatedMarketCostUSD * USD_BRL_RATE).toFixed(2));
 
   return (
     <div id="dashboard-module-container" className="space-y-6 pb-8">
-      {/* Welcome Banner with Real Context */}
-      <div className="p-6 rounded-3xl bg-gradient-to-r from-slate-900 via-slate-900 to-blue-950 text-white border border-slate-800 shadow-sm relative overflow-hidden">
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-radial from-blue-500/10 to-transparent pointer-events-none" />
+      {/* Welcome Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+          Olá, {user?.name || "Colaborador"}
+        </h2>
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-medium border border-blue-500/30 mb-2">
-              <Zap className="w-3.5 h-3.5 text-blue-400" />
-              Empresa: {tenant?.name || "Sua Empresa S.A."}
-            </div>
-            <h2 className="text-xl md:text-2xl font-bold tracking-tight">
-              Olá, {user?.name || "Colaborador"}! Painel de Operações Supabase & IA
-            </h2>
-            <p className="text-xs md:text-sm text-slate-300 mt-1 max-w-2xl">
-              Monitoramento em tempo real de armazenamento de documentos RAG, colaboradores e demonstrativo de custos de IA.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              id="btn-refresh-dashboard"
-              onClick={handleManualRefresh}
-              disabled={isRefreshing}
-              className="px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-all shadow-xs"
-              title="Atualizar dados do Supabase"
-            >
-              <RefreshCw className={cn("w-3.5 h-3.5", isRefreshing && "animate-spin text-blue-400")} />
-              {isRefreshing ? "Atualizando..." : "Sincronizar"}
-            </button>
-
-            <div className="px-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700 text-right">
-              <div className="text-[10px] text-slate-400 font-medium">Plano</div>
-              <div className="text-xs font-bold text-white">{tenant?.plan || "Enterprise Pro"}</div>
-            </div>
-
-            <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-right">
-              <div className="text-[10px] text-emerald-400 font-medium">Latência</div>
-              <div className="text-xs font-bold text-emerald-300 font-mono">{aiLatencyMs} ms</div>
-            </div>
-          </div>
-        </div>
+        <button
+          id="btn-refresh-dashboard"
+          onClick={handleManualRefresh}
+          disabled={isRefreshing}
+          className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-all shadow-xs"
+          title="Atualizar dados"
+        >
+          <RefreshCw className={cn("w-3.5 h-3.5", isRefreshing && "animate-spin text-blue-500")} />
+          {isRefreshing ? "Atualizando..." : "Sincronizar"}
+        </button>
       </div>
 
-      {/* 3 Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Metric 1: Armazenamento RAG (Configurado para 30 GB) */}
+      {/* 2 Metric Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Metric 1: Armazenamento RAG (Configurado para 30 GB compartilhado por todos) */}
         <div
           id="metric-card-storage"
-          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-emerald-500/40 transition-all flex flex-col justify-between"
+          className={cn(
+            "p-5 rounded-2xl bg-white dark:bg-slate-900 border shadow-xs transition-all flex flex-col justify-between",
+            isStorageWarning
+              ? "border-amber-500/60 dark:border-amber-500/60 ring-2 ring-amber-500/20"
+              : "border-slate-200 dark:border-slate-800 hover:border-emerald-500/40"
+          )}
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
               Armazenamento RAG Usado
             </span>
-            <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
-              <Database className="w-4 h-4" />
+            <div
+              className={cn(
+                "p-2 rounded-xl",
+                isStorageWarning
+                  ? "bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400"
+                  : "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400"
+              )}
+            >
+              {isStorageWarning ? <AlertTriangle className="w-4 h-4" /> : <Database className="w-4 h-4" />}
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">
+            <span
+              className={cn(
+                "text-2xl font-bold",
+                isStorageWarning ? "text-amber-600 dark:text-amber-400" : "text-slate-900 dark:text-white"
+              )}
+            >
               {loading ? "..." : `${metrics.storageUsed.valueGb} GB`}
             </span>
             <span className="text-xs font-medium text-slate-400">
@@ -241,15 +247,31 @@ export const DashboardModule: React.FC = () => {
           <div className="mt-3">
             <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden mb-2">
               <div
-                className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500"
+                className={cn(
+                  "h-full rounded-full transition-all duration-500",
+                  isStorageWarning
+                    ? "bg-gradient-to-r from-amber-500 to-rose-500"
+                    : "bg-gradient-to-r from-emerald-500 to-teal-500"
+                )}
                 style={{ width: `${Math.min(100, Math.max(1, (metrics.storageUsed.valueGb / 30) * 100))}%` }}
               />
             </div>
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
               <span>{metrics.storageUsed.docsCount} documento(s) indexado(s)</span>
-              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+              <span
+                className={cn(
+                  "font-semibold",
+                  isStorageWarning ? "text-amber-600 dark:text-amber-400 font-bold" : "text-emerald-600 dark:text-emerald-400"
+                )}
+              >
                 {((metrics.storageUsed.valueGb / 30) * 100).toFixed(1)}% ocupado
               </span>
+            </div>
+            <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-[11px] text-slate-400 dark:text-slate-400 flex items-center justify-between">
+              <span>* Compartilhado por todos os usuários</span>
+              {isStorageWarning && (
+                <span className="text-amber-500 font-bold">Contatar Suporte</span>
+              )}
             </div>
           </div>
         </div>
@@ -281,35 +303,43 @@ export const DashboardModule: React.FC = () => {
             <span className="text-slate-400">Isolamento Supabase RLS</span>
           </div>
         </div>
+      </div>
 
-        {/* Metric 3: Tokens Consumidos & Demonstrativo de Custo */}
+      {/* Shared Storage 25GB Critical Alert Banner */}
+      {isStorageWarning && (
         <div
-          id="metric-card-tokens"
-          className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-amber-500/40 transition-all flex flex-col justify-between"
+          id="shared-storage-warning-banner"
+          className="p-5 rounded-3xl bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/40 text-amber-900 dark:text-amber-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              Tokens Processados
-            </span>
-            <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
-              <Cpu className="w-4 h-4" />
+          <div className="flex items-start gap-3.5">
+            <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                Aviso: Armazenamento RAG Usado em {metrics.storageUsed.valueGb} GB de 30 GB
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[10px] font-bold">
+                  Limite de 25GB Atingido
+                </span>
+              </h4>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-3xl leading-relaxed">
+                <strong>Atenção:</strong> Este armazenamento é <strong>usado por todos os usuários do sistema</strong>. O volume atingiu ou superou 25 GB da cota de 30 GB. Por favor, <strong>entre em contato com o suporte técnico</strong> para expansão de capacidade e evitar o bloqueio na indexação de novos arquivos e bases de conhecimento.
+              </p>
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900 dark:text-white">
-              {loading ? "..." : metrics.tokensConsumed.formatted}
-            </span>
-            <span className="text-xs font-medium text-slate-400">tokens</span>
-          </div>
-          <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-            <span>{totalTokens.toLocaleString()} acumulados</span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-              <Coins className="w-3.5 h-3.5" />
-              Custo Zero por Token
-            </span>
+
+          <div className="flex items-center gap-2.5 shrink-0 self-start md:self-center">
+            <a
+              id="btn-contact-support-storage"
+              href="mailto:suporte@omnisas.io?subject=Solicita%C3%A7%C3%A3o%20de%20Aumento%20de%20Armazenamento%20RAG%20(30GB)&body=Ol%C3%A1%20Suporte%2C%20nosso%20armazenamento%20RAG%20compartilhado%20atingiu%20o%20limite%20de%2025GB.%20Gostar%C3%ADamos%20de%20solicitar%20aumento%20de%20cota."
+              className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-colors"
+            >
+              <Headphones className="w-4 h-4" />
+              <span>Entrar em Contato com o Suporte</span>
+            </a>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Demonstrativo de Custo & Economia em Relação a APIs de Terceiros */}
       <div
@@ -320,74 +350,109 @@ export const DashboardModule: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Calculator className="w-4 h-4 text-blue-400" />
-              <h3 className="text-sm font-bold text-white">
-                Demonstrativo de Custos: APIs Comerciais de Terceiros vs. OmniJarvis
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                <span>Demonstrativo de Custos: APIs Comerciais de Terceiros vs. OmniJarvis</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[11px] font-semibold">
+                  Cobrança Externa em Dólar (USD $)
+                </span>
               </h3>
             </div>
             <p className="text-xs text-slate-400">
-              Estimativa transparente do valor que sua empresa estaria pagando ao utilizar APIs pagas por requisição/token de terceiros (ex: OpenAI GPT-4o, Claude 3.5 Sonnet, Gemini Comercial).
+              Cada pedido enviado ao Jarvis é contabilizado automaticamente. Abaixo está a estimativa de economia real caso essas mesmas requisições fossem processadas em provedores comerciais pagos por chamada/token (ex: OpenAI GPT-4o, Claude 3.5 Sonnet, Gemini Pro).
             </p>
           </div>
 
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold shrink-0">
             <CheckCircle2 className="w-4 h-4" />
-            <span>100% de Economia por Chamada</span>
+            <span>{currentReqs} {currentReqs === 1 ? "pedido contabilizado" : "pedidos contabilizados"}</span>
           </div>
         </div>
 
         {/* Comparison Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-5">
-          {/* Box 1: Custo Estimado em Terceiros */}
-          <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60">
-            <span className="text-[11px] font-medium text-slate-400 block mb-1">
-              Custo Estimado em APIs de Terceiros
-            </span>
-            <div className="text-xl font-bold text-amber-400 font-mono">
-              R$ {estimatedMarketCostBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {/* Box 1: Custo Estimado em Terceiros (em USD e BRL) */}
+          <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60 flex flex-col justify-between">
+            <div>
+              <span className="text-[11px] font-medium text-slate-400 block mb-1">
+                Custo Estimado em APIs de Terceiros
+              </span>
+              <div className="text-xl font-bold text-amber-400 font-mono flex items-baseline gap-1">
+                <span>$ {estimatedMarketCostUSD.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="text-xs text-amber-300/80 font-normal">USD</span>
+              </div>
             </div>
-            <span className="text-[10px] text-slate-400 mt-1 block">
-              Base de ~R$ 0,12 / requisição RAG
-            </span>
+            <div className="mt-2 pt-2 border-t border-slate-700/50">
+              <span className="text-[11px] text-slate-300 font-medium block">
+                ≈ R$ {estimatedMarketCostBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BRL
+              </span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Base: $0.025 USD (~R$ {COST_PER_REQ_BRL.toFixed(2)}) / pedido
+              </span>
+            </div>
           </div>
 
           {/* Box 2: Preço Médio por Requisição Externa */}
-          <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60">
-            <span className="text-[11px] font-medium text-slate-400 block mb-1">
-              Valor Médio em APIs Comerciais
-            </span>
-            <div className="text-xl font-bold text-slate-200 font-mono">
-              ~R$ 0,10 - R$ 0,18
+          <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60 flex flex-col justify-between">
+            <div>
+              <span className="text-[11px] font-medium text-slate-400 block mb-1">
+                Valor Médio em APIs Comerciais
+              </span>
+              <div className="text-xl font-bold text-slate-200 font-mono flex items-baseline gap-1">
+                <span>$ 0.025</span>
+                <span className="text-xs text-slate-400 font-normal">USD / req</span>
+              </div>
             </div>
-            <span className="text-[10px] text-slate-400 mt-1 block">
-              Por consulta com contexto RAG indexado
-            </span>
+            <div className="mt-2 pt-2 border-t border-slate-700/50">
+              <span className="text-[11px] text-slate-300 font-medium block">
+                ≈ R$ {COST_PER_REQ_BRL.toFixed(2)} por consulta RAG
+              </span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                Cobrado em USD por token nos EUA
+              </span>
+            </div>
           </div>
 
           {/* Box 3: Custo com OmniJarvis Interno */}
-          <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/30">
-            <span className="text-[11px] font-medium text-emerald-300 block mb-1">
-              Custo na sua Organização
-            </span>
-            <div className="text-xl font-bold text-emerald-400 font-mono">
-              R$ 0,00
+          <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 flex flex-col justify-between">
+            <div>
+              <span className="text-[11px] font-medium text-emerald-300 block mb-1">
+                Custo na sua Organização
+              </span>
+              <div className="text-xl font-bold text-emerald-400 font-mono flex items-baseline gap-1">
+                <span>$ 0.00</span>
+                <span className="text-xs text-emerald-300/80 font-normal">USD (R$ 0,00)</span>
+              </div>
             </div>
-            <span className="text-[10px] text-emerald-300/80 mt-1 block">
-              Sem cobrança por token excedente
-            </span>
+            <div className="mt-2 pt-2 border-t border-emerald-500/20">
+              <span className="text-[11px] text-emerald-300 font-medium block">
+                100% Gratuito & Ilimitado
+              </span>
+              <span className="text-[10px] text-emerald-400/70 block mt-0.5">
+                Sem taxas em dólar, IOF ou variação cambial
+              </span>
+            </div>
           </div>
 
-          {/* Box 4: Economia Líquida */}
-          <div className="p-4 rounded-2xl bg-blue-950/40 border border-blue-500/30">
-            <span className="text-[11px] font-medium text-blue-300 block mb-1">
-              Custo Evitado / Economia
-            </span>
-            <div className="text-xl font-bold text-blue-400 font-mono flex items-center gap-1">
-              <ArrowDownRight className="w-4 h-4 text-emerald-400" />
-              R$ {estimatedMarketCostBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {/* Box 4: Economia Líquida Total */}
+          <div className="p-4 rounded-2xl bg-blue-950/40 border border-blue-500/30 flex flex-col justify-between">
+            <div>
+              <span className="text-[11px] font-medium text-blue-300 block mb-1">
+                Economia Real Acumulada
+              </span>
+              <div className="text-xl font-bold text-blue-400 font-mono flex items-baseline gap-1">
+                <ArrowDownRight className="w-4 h-4 text-emerald-400 shrink-0 self-center" />
+                <span>$ {estimatedMarketCostUSD.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="text-xs text-blue-300/80 font-normal">USD</span>
+              </div>
             </div>
-            <span className="text-[10px] text-blue-300/80 mt-1 block">
-              Economizado nesta operação
-            </span>
+            <div className="mt-2 pt-2 border-t border-blue-500/20">
+              <span className="text-[11px] text-blue-200 font-medium block">
+                ≈ R$ {estimatedMarketCostBRL.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BRL
+              </span>
+              <span className="text-[10px] text-blue-300/80 block mt-0.5">
+                Economizado em {currentReqs} pedido(s)
+              </span>
+            </div>
           </div>
         </div>
 
@@ -396,11 +461,11 @@ export const DashboardModule: React.FC = () => {
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-blue-400 shrink-0" />
             <span>
-              <strong>Referência de Cálculo:</strong> Cada requisição com RAG consome em média 1.200 a 2.500 tokens (documentos vetorizados + prompt do colaborador + resposta). Em plataformas comerciais como OpenAI ou Claude, isso custaria aproximadamente $0,02 USD (~R$ 0,12 BRL) por chamada.
+              <strong>Como funciona a economia:</strong> Plataformas comerciais estrangeiras faturam em <strong>Dólar Americano ($ USD)</strong> cobrando por milhão de tokens de entrada e saída. Cada consulta ao Jarvis com busca documental (RAG) consumiria cerca de $0.025 USD (~R$ 0,14 BRL + IOF). Com o OmniJarvis operando com motor local e híbrido, sua organização economiza a cada mensagem enviada.
             </span>
           </div>
           <div className="text-[11px] font-semibold text-slate-300 whitespace-nowrap">
-            Processamento Dedicado Corporativo
+            Câmbio Ref: 1 USD = R$ 5,80
           </div>
         </div>
       </div>

@@ -92,7 +92,8 @@ function recordAuditLog(
   details: string,
   tenantId: string,
   status: "success" | "warning" | "denied" = "success",
-  ipAddress = "189.40.122.15"
+  ipAddress = "189.40.122.15",
+  metadata?: any
 ) {
   const newLog = {
     id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -106,6 +107,7 @@ function recordAuditLog(
     ipAddress,
     tenantId,
     status,
+    metadata: metadata || null,
   };
   DB.auditLogs.unshift(newLog);
   if (DB.auditLogs.length > 200) {
@@ -724,6 +726,12 @@ Se o usuário solicitar agendamento, reunião ou marcar compromisso, forneça a 
       }
     }
 
+    // Increment tenant request counter
+    const currentTenant = DB.tenants.find((t) => t.id === tenantId);
+    if (currentTenant) {
+      currentTenant.currentRequests = (currentTenant.currentRequests || 0) + 1;
+    }
+
     recordAuditLog(
       req.body.userId || "usr_user_01",
       userName,
@@ -732,7 +740,13 @@ Se o usuário solicitar agendamento, reunião ou marcar compromisso, forneça a 
       "AI_QUERY_OPENJARVIS",
       `Consulta com OpenJarvis Ollama (${ollamaModel}) (RAG: ${useKnowledgeBase ? "Ativo" : "Inativo"}, WebSearch: ${webSearchUsed ? "Ativo" : "Inativo"})`,
       tenantId,
-      "success"
+      "success",
+      req.ip || "127.0.0.1",
+      {
+        tokens: (ollamaData.eval_count || 0) + (ollamaData.prompt_eval_count || 0) || 350,
+        tokens_used: (ollamaData.eval_count || 0) + (ollamaData.prompt_eval_count || 0) || 350,
+        model: ollamaModel,
+      }
     );
 
     const tokensUsed =
