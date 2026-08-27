@@ -26,11 +26,16 @@ import {
   X,
   Lock,
   Loader2,
+  Globe,
+  Compass,
+  Search,
+  Cpu,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { OpenJarvisMessage, RagCitation } from "../../types";
+import { OpenJarvisMessage, RagCitation, WebSearchQuotaInfo } from "../../types";
 import { cn, sanitizeInput } from "../../lib/utils";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { getWebSearchQuota, sendChatMessage, getAiUsageStatus } from "../../services/api";
 
 interface AiChatModuleProps {
   onAddEventToAgenda?: (event: any) => void;
@@ -43,7 +48,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     {
       id: "msg_init",
       sender: "assistant",
-      text: `Olá ${user?.name || "Colaborador"}! Sou o **OpenJarvis**, assistente corporativo inteligente da **${tenant?.name || "Nexus Enterprise"}**.\n\nEstou conectado à sua **Base de Conhecimento Corporativa (RAG)** e pronto para responder dúvidas sobre políticas internas, relatórios financeiros, suporte ao cliente e automação de rotinas. Como posso ajudar você hoje?`,
+      text: `Olá ${user?.name || "Colaborador"}! Sou o **OpenJarvis** (motor local **Ollama**), assistente corporativo inteligente da **${tenant?.name || "Nexus Enterprise"}**.\n\nEstou conectado à sua **Base de Conhecimento Corporativa (RAG)** e ao módulo **ProJarvis (Pesquisa Web em Tempo Real)**. Como posso ajudar você hoje?`,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       ragConsulted: true,
       ragSources: [
@@ -62,11 +67,16 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCheckingQuota, setIsCheckingQuota] = useState(false);
   const [quotaAlert, setQuotaAlert] = useState<string | null>(null);
+  const [webSearchAlert, setWebSearchAlert] = useState<string | null>(null);
   const [dailyUsage, setDailyUsage] = useState<{
     current: number;
     limit: number;
     activeUsers: number;
   } | null>(null);
+
+  // ProJarvis Web Search Quota & Toggle State
+  const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
+  const [webSearchQuota, setWebSearchQuota] = useState<WebSearchQuotaInfo | null>(null);
 
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
@@ -88,43 +98,22 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     scrollToBottom();
   }, [messages, isGenerating]);
 
-  // Fetch current daily AI quota status from server/database without incrementing
+  // Fetch current daily AI quota & Web Search Quota status from server/database
   const fetchQuotaStatus = useCallback(async () => {
     try {
-      if (isSupabaseConfigured) {
-        try {
-          const { data, error } = await (supabase as any).rpc("get_api_usage_status");
-          if (!error && data) {
-            setDailyUsage({
-              current: Number(data.current_usage ?? data.current ?? 0),
-              limit: Number(data.daily_limit ?? data.limit ?? 20),
-              activeUsers: Number(data.active_users_count ?? data.activeUsers ?? 4),
-            });
-            return;
-          }
-        } catch {
-          // fallback to backend proxy
-        }
-      }
+      // 1. Fetch AI General Quota
+      const aiUsage = await getAiUsageStatus(user?.id || "usr_master_01", tenant?.id || "tenant_omni_01", token || undefined);
+      setDailyUsage({
+        current: aiUsage.current_usage,
+        limit: aiUsage.daily_limit,
+        activeUsers: aiUsage.active_users_count,
+      });
 
-      const res = await fetch(
-        `/api/ai/usage-status?userId=${encodeURIComponent(user?.id || "usr_master_01")}&tenantId=${encodeURIComponent(tenant?.id || "tenant_omni_01")}`,
-        {
-          headers: {
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-        }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setDailyUsage({
-          current: Number(data.current_usage ?? 0),
-          limit: Number(data.daily_limit ?? 20),
-          activeUsers: Number(data.active_users_count ?? 4),
-        });
-      }
+      // 2. Fetch ProJarvis Web Search Quota (3.000 reqs/month dynamically split)
+      const webQuota = await getWebSearchQuota(user?.id || "usr_master_01", tenant?.id || "tenant_omni_01", token || undefined);
+      setWebSearchQuota(webQuota);
     } catch (err) {
-      console.warn("Could not fetch AI quota status:", err);
+      console.warn("Could not fetch quota status:", err);
     }
   }, [user?.id, tenant?.id, token]);
 
@@ -211,7 +200,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     window.speechSynthesis.speak(utterance);
   };
 
-  // Send Chat Message to OpenJarvis Backend with Zero-Trust Quota & Sanitization
+  // Send Chat Message to OpenJarvis Backend via API Service layer
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
@@ -223,12 +212,13 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       return;
     }
 
-    // Reset temporary prompt and error state
+    // Reset temporary prompt and alerts
     setInputPrompt("");
     setQuotaAlert(null);
+    setWebSearchAlert(null);
     setIsCheckingQuota(true);
 
-    // 2. ZERO-TRUST DYNAMIC QUOTA CHECK: Consult Supabase RPC check_and_increment_api_usage()
+    // 2. AI General Quota Check & Increment
     let quotaDecision: {
       allowed: boolean;
       current_usage?: number;
@@ -255,7 +245,6 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         }
       }
 
-      // If Supabase RPC is not available or returned no direct data, validate via zero-trust server API
       if (!quotaDecision) {
         const quotaRes = await fetch("/api/ai/check-and-increment", {
           method: "POST",
@@ -286,7 +275,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       setIsCheckingQuota(false);
     }
 
-    // 3. ENFORCE QUOTA RESTRICTION: Block message sending if quota exceeded
+    // 3. Enforce General AI Quota Restriction
     if (quotaDecision && quotaDecision.allowed === false) {
       const limitX = quotaDecision.daily_limit ?? 20;
       const activeUsersY = quotaDecision.active_users_count ?? 4;
@@ -302,12 +291,11 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         });
       }
 
-      // Restore user text in prompt so they don't lose typed text
+      // Restore user text in prompt
       setInputPrompt(rawInput);
-      return; // STRICTLY BLOCK
+      return;
     }
 
-    // Update usage badge if quota was successfully checked
     if (quotaDecision && quotaDecision.current_usage !== undefined) {
       setDailyUsage({
         current: quotaDecision.current_usage,
@@ -316,90 +304,99 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       });
     }
 
-    // 4. Proceed with AI message dispatch
+    // 4. Proceed with message dispatch via src/services/api.ts
     const userMsg: OpenJarvisMessage = {
       id: `usr_${Date.now()}`,
       sender: "user",
       text: sanitizedText,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      isWebSearchEnabled,
     };
 
     setMessages((prev) => [...prev, userMsg]);
     setIsGenerating(true);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_JARVIS_API_URL || ''}/api/gemini/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
+      const data = await sendChatMessage({
+        message: sanitizedText,
+        history: messages.slice(-6),
+        useKnowledgeBase,
+        isWebSearchEnabled,
+        userSector: user?.sector || "Geral",
+        userRole: user?.role || "user",
+        userName: user?.name || "Colaborador",
+        tenantId: tenant?.id || "tenant_omni_01",
+        userId: user?.id || "usr_master_01",
+        userEmail: user?.email || "usuario@nexus.com.br",
+        token: token || undefined,
+        onWebSearchQuotaExceeded: (qInfo) => {
+          setWebSearchAlert(
+            `⚠️ Cota individual de Pesquisa Web atingida (${qInfo.webSearchUsed}/${qInfo.webSearchLimit} buscas diárias baseadas nos ${qInfo.activeUsersCount} usuários ativos). A mensagem foi respondida normalmente pelo motor Ollama Local.`
+          );
         },
-        body: JSON.stringify({
-          message: sanitizedText,
-          history: messages.slice(-6),
-          useKnowledgeBase,
-          userSector: user?.sector || "Geral",
-          userRole: user?.role || "user",
-          userName: user?.name || "Colaborador",
-          tenantId: tenant?.id || "tenant_omni_01",
-          userId: user?.id || "usr_master_01",
-          userEmail: user?.email || "usuario@nexus.com.br",
-        }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        const fullResponseText = data.text;
-        const msgId = `ai_${Date.now()}`;
-
-        // Create empty assistant message for typewriter effect
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: msgId,
-            sender: "assistant",
-            text: "",
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            ragConsulted: data.ragConsulted,
-            ragSources: data.ragSources,
-            suggestedEvent: data.suggestedEvent,
-            tokensUsed: data.tokensUsed,
-          },
-        ]);
-
-        // Smooth typewriter effect simulation
-        let currentIndex = 0;
-        const chunkSize = Math.max(1, Math.floor(fullResponseText.length / 30));
-        const interval = setInterval(() => {
-          currentIndex += chunkSize;
-          if (currentIndex >= fullResponseText.length) {
-            currentIndex = fullResponseText.length;
-            clearInterval(interval);
-            setIsGenerating(false);
-          }
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === msgId ? { ...m, text: fullResponseText.slice(0, currentIndex) } : m
-            )
-          );
-        }, 20);
-      } else {
-        throw new Error("Erro no servidor");
+      if (data.webSearchQuotaExceeded) {
+        setWebSearchAlert(
+          "⚠️ Cota de Pesquisa Web ProJarvis esgotada para hoje. Resposta gerada utilizando o motor Ollama Local e a Base de Conhecimento interna."
+        );
       }
-    } catch {
+
+      const fullResponseText = data.text;
+      const msgId = `ai_${Date.now()}`;
+
+      // Update Web Search quota locally
+      fetchQuotaStatus();
+
+      // Create empty assistant message for typewriter effect
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: msgId,
+          sender: "assistant",
+          text: "",
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          ragConsulted: data.ragConsulted,
+          ragSources: data.ragSources,
+          webSearchUsed: data.webSearchUsed,
+          webSearchSources: data.webSearchSources,
+          suggestedEvent: data.suggestedEvent,
+          tokensUsed: data.tokensUsed,
+        },
+      ]);
+
+      // Smooth typewriter effect simulation
+      let currentIndex = 0;
+      const chunkSize = Math.max(1, Math.floor(fullResponseText.length / 30));
+      const interval = setInterval(() => {
+        currentIndex += chunkSize;
+        if (currentIndex >= fullResponseText.length) {
+          currentIndex = fullResponseText.length;
+          clearInterval(interval);
+          setIsGenerating(false);
+        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msgId ? { ...m, text: fullResponseText.slice(0, currentIndex) } : m
+          )
+        );
+      }, 20);
+    } catch (err: any) {
       setIsGenerating(false);
+      const errorMessage =
+        err?.message ||
+        "Desculpe, ocorreu uma instabilidade na conexão com o motor OpenJarvis. Verifique se o servidor Ollama (porta 11434) ou SearXNG (porta 8080) estão em execução.";
       setMessages((prev) => [
         ...prev,
         {
           id: `err_${Date.now()}`,
           sender: "assistant",
-          text: "Desculpe, ocorreu uma instabilidade momentânea na conexão com o motor OpenJarvis. Por favor, tente novamente.",
+          text: `⚠️ **Falha de Conexão:** ${errorMessage}`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
     }
   };
-
 
   // Upload file for RAG indexing
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -494,55 +491,56 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
           <div>
             <div className="flex items-center gap-2">
               <span className="font-bold text-sm text-slate-900 dark:text-white">
-                OpenJarvis IA
+                OmniJarvis IA
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold border border-blue-500/20">
-                Gemini Flash + RAG
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20 flex items-center gap-1">
+                <Cpu className="w-3 h-3" />
+                Ollama Local + RAG
               </span>
+              {isWebSearchEnabled && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold border border-blue-500/20 flex items-center gap-1 animate-pulse">
+                  <Globe className="w-3 h-3" />
+                  ProJarvis Web
+                </span>
+              )}
             </div>
             <div className="text-[11px] text-slate-400">
-              Respostas baseadas nos documentos corporativos da sua empresa
+              Motor Ollama local de documentos + Pesquisa Web ProJarvis em tempo real
             </div>
           </div>
         </div>
 
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Discrete Daily Quota Consumption Indicator */}
-          <div
-            id="chat-header-quota-indicator"
+          {/* ProJarvis Web Search Toggle (Client Toggle - NO API KEYS EXPOSED) */}
+          <button
+            id="btn-toggle-web-search"
+            type="button"
+            onClick={() => {
+              setIsWebSearchEnabled(!isWebSearchEnabled);
+              setWebSearchAlert(null);
+            }}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all shadow-xs",
-              !dailyUsage
-                ? "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400"
-                : dailyUsage.current >= dailyUsage.limit
-                ? "bg-rose-50 dark:bg-rose-950/40 border-rose-500/40 text-rose-600 dark:text-rose-400"
-                : dailyUsage.current / dailyUsage.limit > 0.75
-                ? "bg-amber-50 dark:bg-amber-950/40 border-amber-500/40 text-amber-600 dark:text-amber-400"
-                : "bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer",
+              isWebSearchEnabled
+                ? "bg-indigo-50 dark:bg-indigo-950/50 border-indigo-500/50 text-indigo-700 dark:text-indigo-300 shadow-xs"
+                : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
             )}
-            title={
-              dailyUsage
-                ? `Cota diária: ${dailyUsage.current} de ${dailyUsage.limit} requisições utilizadas hoje. Calculado com base em ${dailyUsage.activeUsers} usuários ativos da empresa. Renovação à meia-noite.`
-                : "Consultando cota diária do Supabase..."
-            }
+            title="Ativar/Desativar Pesquisa Web ProJarvis em Tempo Real (Pool Global de 3.000 requisições/mês)"
           >
-            <Activity
+            <Globe className={cn("w-3.5 h-3.5", isWebSearchEnabled ? "text-indigo-600 dark:text-indigo-400 animate-spin-slow" : "text-slate-400")} />
+            <span>Pesquisa Web (ProJarvis)</span>
+            <span
               className={cn(
-                "w-3.5 h-3.5",
-                dailyUsage && dailyUsage.current >= dailyUsage.limit
-                  ? "text-rose-500 animate-pulse"
-                  : "text-blue-500"
+                "text-[10px] px-1.5 py-0.2 rounded-full font-mono ml-0.5",
+                isWebSearchEnabled
+                  ? "bg-indigo-200/60 dark:bg-indigo-900/60 text-indigo-900 dark:text-indigo-200"
+                  : "bg-slate-200 dark:bg-slate-700 text-slate-500"
               )}
-            />
-            <span>
-              Uso hoje:{" "}
-              <strong className="font-bold">
-                {dailyUsage ? `${dailyUsage.current} / ${dailyUsage.limit}` : "..."}
-              </strong>{" "}
-              reqs
+            >
+              {webSearchQuota ? `${webSearchQuota.webSearchUsed}/${webSearchQuota.webSearchLimit}` : "..."}
             </span>
-          </div>
+          </button>
 
           {/* RAG Toggle */}
           <button
@@ -550,7 +548,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
             type="button"
             onClick={() => setUseKnowledgeBase(!useKnowledgeBase)}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all",
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer",
               useKnowledgeBase
                 ? "bg-blue-50 dark:bg-blue-950/40 border-blue-500/40 text-blue-600 dark:text-blue-400 shadow-xs"
                 : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
@@ -572,7 +570,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
             id="btn-upload-file-rag"
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5 text-blue-500" />
             <span className="hidden sm:inline">Upload RAG</span>
@@ -590,7 +588,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
             id="btn-clear-chat"
             type="button"
             onClick={clearChat}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             title="Limpar Conversa"
           >
             <Trash2 className="w-4 h-4" />
@@ -598,7 +596,35 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         </div>
       </div>
 
-      {/* Visual Quota Exceeded Alert Banner */}
+      {/* Web Search Quota Exceeded / Fallback Alert Banner */}
+      {webSearchAlert && (
+        <div
+          id="alert-web-search-quota"
+          className="m-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 flex items-start justify-between gap-3 animate-in fade-in slide-in-from-top-2 text-xs"
+        >
+          <div className="flex items-start gap-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5">
+              <Globe className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-bold block text-amber-900 dark:text-amber-200">
+                Aviso do Módulo ProJarvis (Pesquisa Web)
+              </span>
+              <p className="mt-0.5 leading-relaxed">{webSearchAlert}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWebSearchAlert(null)}
+            className="p-1 text-amber-500 hover:text-amber-700 hover:bg-amber-500/20 rounded-lg transition-colors cursor-pointer"
+            title="Fechar aviso"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Visual General Quota Exceeded Alert Banner */}
       {quotaAlert && (
         <div
           id="alert-quota-exceeded"
@@ -621,7 +647,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
           <button
             type="button"
             onClick={() => setQuotaAlert(null)}
-            className="p-1 rounded-lg text-rose-400 hover:text-rose-600 dark:hover:text-rose-200 hover:bg-rose-500/20 transition-colors flex-shrink-0"
+            className="p-1 rounded-lg text-rose-400 hover:text-rose-600 dark:hover:text-rose-200 hover:bg-rose-500/20 transition-colors flex-shrink-0 cursor-pointer"
             title="Fechar aviso"
           >
             <X className="w-4 h-4" />
@@ -691,14 +717,21 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                         : "border-slate-200 dark:border-slate-700 text-slate-400"
                     )}
                   >
-                    <span>{msg.timestamp}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span>{msg.timestamp}</span>
+                      {msg.webSearchUsed && (
+                        <span className="px-1.5 py-0.2 rounded-md bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-medium">
+                          🌐 ProJarvis Web
+                        </span>
+                      )}
+                    </span>
 
                     {!isUser && (
                       <div className="flex items-center gap-2">
                         {/* TTS Play/Stop */}
                         <button
                           onClick={() => speakText(msg.text, msg.id)}
-                          className="hover:text-blue-500 transition-colors flex items-center gap-1"
+                          className="hover:text-blue-500 transition-colors flex items-center gap-1 cursor-pointer"
                           title="Ouvir resposta (TTS)"
                         >
                           {isSpeaking && currentSpeakingId === msg.id ? (
@@ -717,7 +750,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                         {/* Copy button */}
                         <button
                           onClick={() => copyToClipboard(msg.text, msg.id)}
-                          className="hover:text-blue-500 transition-colors flex items-center gap-1"
+                          className="hover:text-blue-500 transition-colors flex items-center gap-1 cursor-pointer"
                           title="Copiar texto"
                         >
                           {copiedId === msg.id ? (
@@ -737,6 +770,48 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                   </div>
                 </div>
 
+                {/* ProJarvis Web Search Sources Panel */}
+                {msg.webSearchSources && msg.webSearchSources.length > 0 && (
+                  <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-800/40 text-xs space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-800 dark:text-indigo-300">
+                      <span className="flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        Fontes da Pesquisa Web (ProJarvis - {msg.webSearchSources.length} referências)
+                      </span>
+                      <span className="text-[10px] text-indigo-500 font-medium">Tempo Real</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {msg.webSearchSources.map((source, idx) => (
+                        <div
+                          key={idx}
+                          className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/50 text-[11px]"
+                        >
+                          <div className="flex items-center justify-between font-medium text-slate-900 dark:text-slate-100">
+                            <a
+                              href={source.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline truncate max-w-[280px]"
+                            >
+                              <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                              {source.title}
+                            </a>
+                            {source.publishedDate && (
+                              <span className="text-[10px] text-slate-400">
+                                {source.publishedDate}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-slate-500 dark:text-slate-400 mt-1 italic line-clamp-2">
+                            "{source.snippet}"
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* RAG Sources Citations Panel */}
                 {msg.ragSources && msg.ragSources.length > 0 && (
                   <div className="p-3 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40 text-xs space-y-2">
@@ -745,7 +820,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                         <BookOpen className="w-3.5 h-3.5" />
                         Fontes Consultadas na Base de Conhecimento ({msg.ragSources.length})
                       </span>
-                      <span className="text-[10px] text-blue-500">RAG Ativo</span>
+                      <span className="text-[10px] text-blue-500">RAG Documentos</span>
                     </div>
 
                     <div className="grid grid-cols-1 gap-1.5">
@@ -821,7 +896,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                           alert("Compromisso adicionado à sua Agenda com sucesso!");
                         }
                       }}
-                      className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-colors"
+                      className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                     >
                       <Calendar className="w-3.5 h-3.5" />
                       <span>Confirmar & Adicionar à Agenda Corporativa</span>
@@ -840,7 +915,11 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
               <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-ping" />
-              <span>OpenJarvis consultando base de conhecimento e gerando resposta...</span>
+              <span>
+                {isWebSearchEnabled
+                  ? "OpenJarvis buscando na Web via ProJarvis e processando com Ollama..."
+                  : "OpenJarvis consultando base de conhecimento e gerando resposta..."}
+              </span>
             </div>
           </div>
         )}
@@ -848,7 +927,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Prompt Box with STT & RAG controls */}
+      {/* Input Prompt Box with STT, ProJarvis Web Search & RAG controls */}
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
         <form onSubmit={handleSendMessage} className="space-y-2">
           <div className="relative flex items-center">
@@ -866,17 +945,20 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
               }}
               placeholder={
                 isGenerating
-                  ? "OpenJarvis está respondendo... Por favor, aguarde."
+                  ? "OmniJarvis está respondendo... Por favor, aguarde."
                   : isCheckingQuota
-                  ? "Validando política de segurança e cota no Supabase..."
+                  ? "Validando política de cota corporativa..."
                   : isRecording
                   ? "🎙️ Gravando sua voz... Fale agora!"
-                  : "Pergunte ao OpenJarvis sobre documentos, dados financeiros, agendamentos..."
+                  : isWebSearchEnabled
+                  ? "Pergunte com Pesquisa Web ProJarvis ativada (notícias, tendências, web)..."
+                  : "Pergunte ao OmniJarvis (Ollama Local) sobre documentos, finanças, processos..."
               }
               className={cn(
                 "w-full pl-4 pr-24 py-3 text-xs md:text-sm rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-none transition-all disabled:opacity-60 disabled:cursor-not-allowed",
                 isRecording && "ring-2 ring-rose-500/50 border-rose-500 bg-rose-50/10",
-                isCheckingQuota && "ring-2 ring-amber-500/30 border-amber-500/50"
+                isCheckingQuota && "ring-2 ring-amber-500/30 border-amber-500/50",
+                isWebSearchEnabled && "border-indigo-400 dark:border-indigo-600/60"
               )}
             />
 
@@ -889,7 +971,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                 disabled={isGenerating || isCheckingQuota}
                 onClick={toggleRecording}
                 className={cn(
-                  "p-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed",
+                  "p-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer",
                   isRecording
                     ? "bg-rose-500 text-white animate-pulse"
                     : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
@@ -926,12 +1008,21 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
           <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
             <div className="flex items-center gap-2">
-              <span>Shift + Enter para nova linha</span>
+              <span>Shift + Enter para quebra de linha</span>
               <span>•</span>
-              <span className="flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-blue-500" />
-                Citações RAG ativas
+              <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
+                <Cpu className="w-3 h-3 text-emerald-500" />
+                Ollama Local RAG ilimitado
               </span>
+              {isWebSearchEnabled && (
+                <>
+                  <span>•</span>
+                  <span className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-medium">
+                    <Globe className="w-3 h-3" />
+                    ProJarvis: {webSearchQuota ? `${webSearchQuota.webSearchUsed}/${webSearchQuota.webSearchLimit} hoje` : "Ativo"}
+                  </span>
+                </>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

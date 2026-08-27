@@ -52,6 +52,24 @@ export interface RagCitation {
   similarity?: number;
 }
 
+export interface WebSearchSource {
+  title: string;
+  url: string;
+  snippet: string;
+  publishedDate?: string;
+}
+
+export interface WebSearchQuotaInfo {
+  webSearchLimit: number;
+  webSearchUsed: number;
+  remaining: number;
+  activeUsersCount: number;
+  monthlyPoolTotal: number;
+  allowed: boolean;
+  date?: string;
+  message?: string;
+}
+
 export interface OpenJarvisMessage {
   id: string;
   sender: 'user' | 'assistant' | 'system';
@@ -59,6 +77,9 @@ export interface OpenJarvisMessage {
   timestamp: string;
   ragSources?: RagCitation[];
   ragConsulted?: boolean;
+  webSearchUsed?: boolean;
+  webSearchSources?: WebSearchSource[];
+  isWebSearchEnabled?: boolean;
   audioBase64?: string;
   tokensUsed?: number;
   suggestedEvent?: {

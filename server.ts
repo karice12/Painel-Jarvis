@@ -690,6 +690,15 @@ const userDailyAiUsage: Record<string, { date: string; count: number }> = {
   usr_user_02: { date: new Date().toISOString().split("T")[0], count: 6 },
 };
 
+// PROJARVIS WEB SEARCH QUOTA MANAGEMENT: Global Pool = 3.000 reqs/mês
+const GLOBAL_MONTHLY_WEB_SEARCH_POOL = 3000;
+const userWebSearchDailyUsage: Record<string, { date: string; count: number }> = {
+  usr_master_01: { date: new Date().toISOString().split("T")[0], count: 2 },
+  usr_admin_01: { date: new Date().toISOString().split("T")[0], count: 5 },
+  usr_user_01: { date: new Date().toISOString().split("T")[0], count: 4 },
+  usr_user_02: { date: new Date().toISOString().split("T")[0], count: 1 },
+};
+
 function getDailyQuotaInfo(userId: string, tenantId: string = "tenant_omni_01") {
   const today = new Date().toISOString().split("T")[0];
   const activeUsersCount = DB.users.filter(
@@ -710,6 +719,36 @@ function getDailyQuotaInfo(userId: string, tenantId: string = "tenant_omni_01") 
     daily_limit: dailyLimit,
     active_users_count: activeUsersCount,
     date: today,
+  };
+}
+
+function getWebSearchQuotaInfo(userId: string, tenantId: string = "tenant_omni_01") {
+  const today = new Date().toISOString().split("T")[0];
+  const activeUsersCount = DB.users.filter(
+    (u) => u.tenantId === tenantId && u.status !== "offline"
+  ).length || 5;
+
+  // Cota individual diária calculada dinamicamente: 3.000 / membros_ativos / 30 dias
+  const dailySearchLimit = Math.max(2, Math.floor(GLOBAL_MONTHLY_WEB_SEARCH_POOL / activeUsersCount / 30));
+
+  if (!userWebSearchDailyUsage[userId] || userWebSearchDailyUsage[userId].date !== today) {
+    userWebSearchDailyUsage[userId] = { date: today, count: 0 };
+  }
+
+  const currentUsed = userWebSearchDailyUsage[userId].count;
+  const remaining = Math.max(0, dailySearchLimit - currentUsed);
+
+  return {
+    webSearchLimit: dailySearchLimit,
+    webSearchUsed: currentUsed,
+    remaining,
+    activeUsersCount,
+    monthlyPoolTotal: GLOBAL_MONTHLY_WEB_SEARCH_POOL,
+    allowed: currentUsed < dailySearchLimit,
+    date: today,
+    message: currentUsed >= dailySearchLimit
+      ? `Limite individual de Pesquisa Web atingido (${dailySearchLimit} buscas diárias calculadas com base em ${activeUsersCount} usuários ativos).`
+      : `Cota de Pesquisa Web: ${currentUsed}/${dailySearchLimit} buscas hoje.`,
   };
 }
 
@@ -755,17 +794,47 @@ app.get("/api/ai/usage-status", (req, res) => {
   });
 });
 
+// 4.4 ProJarvis Web Search Quota Endpoint
+app.get(["/api/ai/web-search/quota", "/api/ai/web-search-quota"], (req, res) => {
+  const userId = (req.query.userId as string) || "usr_master_01";
+  const tenantId = (req.query.tenantId as string) || "tenant_omni_01";
+  const quota = getWebSearchQuotaInfo(userId, tenantId);
+  return res.json(quota);
+});
+
+app.post("/api/ai/web-search/check-and-increment", (req, res) => {
+  const { userId = "usr_master_01", tenantId = "tenant_omni_01" } = req.body;
+  const quota = getWebSearchQuotaInfo(userId, tenantId);
+
+  if (!quota.allowed) {
+    return res.json({
+      ...quota,
+      allowed: false,
+      message: `Você atingiu sua cota individual diária de Pesquisa Web (${quota.webSearchLimit} buscas).`,
+    });
+  }
+
+  userWebSearchDailyUsage[userId].count += 1;
+  const updatedQuota = getWebSearchQuotaInfo(userId, tenantId);
+  return res.json(updatedQuota);
+});
+
 // 5. OpenJarvis AI Chat with RAG Grounding & Intent Event Extraction
-app.post(["/api/ai/chat", "/api/gemini/chat"], async (req, res) => {
+app.post(["/api/ai/chat", "/api/gemini/chat", "/api/ollama/chat"], async (req, res) => {
   const {
     message,
     history = [],
     useKnowledgeBase = true,
+    isWebSearchEnabled = false,
+    webSearchEnabled = false,
     userSector = "Geral",
     tenantId = "tenant_omni_01",
     userRole = "user",
     userName = "Colaborador",
+    userId = "usr_master_01",
   } = req.body;
+
+  const wantsWebSearch = Boolean(isWebSearchEnabled || webSearchEnabled);
 
   if (!message || typeof message !== "string") {
     return res.status(400).json({ error: "Mensagem obrigatória" });
@@ -775,6 +844,75 @@ app.post(["/api/ai/chat", "/api/gemini/chat"], async (req, res) => {
   const tenant = DB.tenants.find((t) => t.id === tenantId);
   if (tenant) {
     tenant.currentRequests += 1;
+  }
+
+  // Web Search Quota Evaluation & Real SearXNG Integration
+  let webSearchUsed = false;
+  let webSearchQuotaExceeded = false;
+  const webSearchSources: Array<{
+    title: string;
+    url: string;
+    snippet: string;
+    publishedDate?: string;
+  }> = [];
+
+  if (wantsWebSearch) {
+    const webQuota = getWebSearchQuotaInfo(userId, tenantId);
+    if (webQuota.allowed) {
+      // Consume 1 search credit
+      userWebSearchDailyUsage[userId].count += 1;
+      webSearchUsed = true;
+
+      // Real SearXNG Search Request
+      const searxngBase = process.env.SEARXNG_URL || "http://localhost:8080";
+      try {
+        const searxngUrl = `${searxngBase.replace(/\/+$/, "")}/search?q=${encodeURIComponent(message)}&format=json`;
+        const searxngRes = await fetch(searxngUrl, {
+          method: "GET",
+          headers: {
+            "Accept": "application/json",
+          },
+        });
+
+        if (!searxngRes.ok) {
+          const statusText = searxngRes.statusText || "";
+          return res.status(500).json({
+            error: `Erro ao conectar com SearXNG na porta 8080 (${searxngBase}): HTTP ${searxngRes.status} ${statusText}`,
+          });
+        }
+
+        const searxngData = (await searxngRes.json()) as {
+          results?: Array<{
+            title?: string;
+            url?: string;
+            content?: string;
+            snippet?: string;
+            publishedDate?: string;
+            published_date?: string;
+          }>;
+        };
+
+        const results = searxngData.results || [];
+        results.slice(0, 6).forEach((r) => {
+          webSearchSources.push({
+            title: r.title || r.url || "Fonte Web",
+            url: r.url || "",
+            snippet: r.content || r.snippet || "",
+            publishedDate: r.publishedDate || r.published_date || undefined,
+          });
+        });
+      } catch (searxngErr: any) {
+        console.error("[SearXNG Connection Error]", searxngErr);
+        return res.status(500).json({
+          error: `Erro ao conectar com SearXNG na porta 8080: ${searxngErr.message || String(searxngErr)}`,
+          details: searxngErr.stack || String(searxngErr),
+        });
+      }
+    } else {
+      // Quota exceeded: Do not use web search
+      webSearchQuotaExceeded = true;
+      webSearchUsed = false;
+    }
   }
 
   // RAG Search in Document Knowledge Base
@@ -828,10 +966,20 @@ app.post(["/api/ai/chat", "/api/gemini/chat"], async (req, res) => {
     }
   }
 
-  const systemInstruction = `Você é o OpenJarvis, o Assistente de Inteligência Artificial Corporativo ultra-seguro da empresa "${tenant?.name || 'Nexus Enterprise'}".
+  let webSearchContext = "";
+  if (webSearchUsed && webSearchSources.length > 0) {
+    webSearchContext = `\n\n--- RESULTADOS DA PESQUISA WEB EM TEMPO REAL (SEARXNG / PROJARVIS) ---\n` +
+      webSearchSources
+        .map((s, idx) => `[Web Fonte ${idx + 1}: ${s.title}]\nURL: ${s.url}\nConteúdo: "${s.snippet}"`)
+        .join("\n\n");
+  }
+
+  const systemInstruction = `Você é o OpenJarvis (motor Ollama Local integrado com SearXNG ProJarvis Web Search), o Assistente de Inteligência Artificial Corporativo ultra-seguro da empresa "${tenant?.name || 'Nexus Enterprise'}".
 Seu objetivo é auxiliar os colaboradores (${userName}, setor: ${userSector}, cargo: ${userRole}) com extrema precisão, tom profissional, prestativo e executivo em Português do Brasil.
 ${useKnowledgeBase ? `A Base de Conhecimento interna está ATIVADA. Quando responder usando os documentos fornecidos no contexto RAG, cite explicitamente as fontes encontradas.` : `A consulta à base de conhecimento corporativa está DESATIVADA nesta mensagem.`}
+${webSearchUsed ? `A Pesquisa Web ProJarvis (SearXNG) está ATIVA e retornou fontes externas atualizadas.` : `Pesquisa Web externa não utilizada nesta requisição.`}
 ${ragContext}
+${webSearchContext}
 
 Se o usuário solicitar agendamento, reunião ou marcar compromisso, forneça a resposta normal e, se detectar data/horário/título claros, inclua no final um bloco JSON oculto no formato:
 \`\`\`event_json
@@ -839,96 +987,98 @@ Se o usuário solicitar agendamento, reunião ou marcar compromisso, forneça a 
 \`\`\`
 `;
 
+  // Real Call to Local Ollama Server
+  const ollamaBase = process.env.OLLAMA_URL || "http://localhost:11434";
+  const ollamaModel = process.env.OLLAMA_MODEL || "llama3";
+
   try {
-    const gemini = getGeminiClient();
+    const ollamaChatUrl = `${ollamaBase.replace(/\/+$/, "")}/api/chat`;
+    const ollamaMessages = [
+      {
+        role: "system",
+        content: systemInstruction,
+      },
+      ...history.slice(-6).map((h: any) => ({
+        role: h.sender === "user" ? "user" : "assistant",
+        content: h.text,
+      })),
+      {
+        role: "user",
+        content: message,
+      },
+    ];
 
-    if (gemini) {
-      const response = await gemini.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          ...history.slice(-6).map((h: any) => ({
-            role: h.sender === "user" ? "user" : "model",
-            parts: [{ text: h.text }],
-          })),
-          {
-            role: "user",
-            parts: [{ text: message }],
-          },
-        ],
-        config: {
-          systemInstruction,
-          temperature: 0.7,
-        },
-      });
+    const ollamaRes = await fetch(ollamaChatUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ollamaModel,
+        messages: ollamaMessages,
+        stream: false,
+      }),
+    });
 
-      let responseText = response.text || "Desculpe, não consegui processar a resposta.";
-      let suggestedEvent: any = null;
-
-      // Check for event_json block
-      const eventMatch = responseText.match(/```event_json\s*([\s\S]*?)\s*```/);
-      if (eventMatch && eventMatch[1]) {
-        try {
-          suggestedEvent = JSON.parse(eventMatch[1].trim());
-          responseText = responseText.replace(/```event_json[\s\S]*?```/, "").trim();
-        } catch {
-          // ignore
-        }
-      }
-
-      recordAuditLog(
-        req.body.userId || "usr_user_01",
-        userName,
-        req.body.userEmail || "user@nexus.com.br",
-        userRole,
-        "AI_QUERY_OPENJARVIS",
-        `Consulta com OpenJarvis (RAG: ${useKnowledgeBase ? "Ativo" : "Inativo"}, Fontes: ${ragSources.length})`,
-        tenantId,
-        "success"
-      );
-
-      return res.json({
-        text: responseText,
-        ragSources: useKnowledgeBase ? ragSources : [],
-        ragConsulted: useKnowledgeBase && ragSources.length > 0,
-        suggestedEvent,
-        tokensUsed: Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + (ragContext ? 250 : 0),
-        timestamp: new Date().toISOString(),
-      });
-    } else {
-      // Fallback simulated intelligent response
-      let mockAnswer = "";
-      if (message.toLowerCase().includes("segurança") || message.toLowerCase().includes("lgpd")) {
-        mockAnswer = `Com base na **Política de Segurança da Informação 2026** da empresa, mantemos conformidade total com a LGPD, criptografia TLS 1.3 em trânsito e AES-256 em repouso. O acesso é estritamente controlado por RBAC (Master Admin, Admin e User) e todos os logs são auditados em tempo real.`;
-      } else if (message.toLowerCase().includes("financeiro") || message.toLowerCase().includes("dre") || message.toLowerCase().includes("receita")) {
-        mockAnswer = `Conforme o **Relatório DRE Q2 2026 Consolidado**, nossa receita bruta atingiu **R$ 4.820.000** com margem EBITDA de 31.4%. A automação com IA nos permitiu reduzir custos operacionais em 18.2%.`;
-      } else if (message.toLowerCase().includes("reunião") || message.toLowerCase().includes("agenda") || message.toLowerCase().includes("marcar")) {
-        mockAnswer = `Com certeza! Preparei o agendamento da sua reunião com a equipe para alinhamento estratégico. Você pode confirmar para adicionar diretamente à Agenda corporativa.`;
-      } else {
-        mockAnswer = `Olá ${userName}! Sou o OpenJarvis, seu assistente de produtividade e inteligência operacional. Analisei sua solicitação e estou pronto para auxiliá-lo em tarefas técnicas, análises de dados, redação e consulta aos documentos corporativos da ${tenant?.name || "nossa empresa"}.`;
-      }
-
-      return res.json({
-        text: mockAnswer,
-        ragSources: useKnowledgeBase ? ragSources.slice(0, 2) : [],
-        ragConsulted: useKnowledgeBase && ragSources.length > 0,
-        suggestedEvent: message.toLowerCase().includes("reunião")
-          ? {
-              title: "Reunião de Alinhamento (IA OpenJarvis)",
-              date: new Date(Date.now() + 86400000).toISOString().split("T")[0],
-              startTime: "14:00",
-              endTime: "15:00",
-              description: "Agendamento sugerido pelo assistente OpenJarvis",
-            }
-          : null,
-        tokensUsed: 145,
-        timestamp: new Date().toISOString(),
+    if (!ollamaRes.ok) {
+      const errorText = await ollamaRes.text().catch(() => "");
+      return res.status(500).json({
+        error: `Erro ao conectar com Ollama na porta 11434 (${ollamaBase}): HTTP ${ollamaRes.status} ${ollamaRes.statusText} - ${errorText || "Falha na geração do modelo"}`,
       });
     }
-  } catch (error: any) {
-    console.error("Gemini Chat Error:", error);
+
+    const ollamaData = (await ollamaRes.json()) as {
+      message?: { content?: string };
+      eval_count?: number;
+      prompt_eval_count?: number;
+    };
+
+    let responseText = ollamaData.message?.content || "";
+    let suggestedEvent: any = null;
+
+    // Check for event_json block
+    const eventMatch = responseText.match(/```event_json\s*([\s\S]*?)\s*```/);
+    if (eventMatch && eventMatch[1]) {
+      try {
+        suggestedEvent = JSON.parse(eventMatch[1].trim());
+        responseText = responseText.replace(/```event_json[\s\S]*?```/, "").trim();
+      } catch {
+        // ignore json parse error
+      }
+    }
+
+    recordAuditLog(
+      req.body.userId || "usr_user_01",
+      userName,
+      req.body.userEmail || "user@nexus.com.br",
+      userRole,
+      "AI_QUERY_OPENJARVIS",
+      `Consulta com OpenJarvis Ollama (${ollamaModel}) (RAG: ${useKnowledgeBase ? "Ativo" : "Inativo"}, WebSearch: ${webSearchUsed ? "Ativo" : "Inativo"})`,
+      tenantId,
+      "success"
+    );
+
+    const tokensUsed =
+      (ollamaData.eval_count || 0) + (ollamaData.prompt_eval_count || 0) ||
+      Math.floor(message.length / 3) + Math.floor(responseText.length / 3);
+
+    return res.json({
+      text: responseText,
+      ragSources: useKnowledgeBase ? ragSources : [],
+      ragConsulted: useKnowledgeBase && ragSources.length > 0,
+      webSearchUsed,
+      webSearchSources,
+      webSearchQuotaExceeded,
+      engineUsed: "ollama_local",
+      suggestedEvent,
+      tokensUsed,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (ollamaErr: any) {
+    console.error("[Ollama Connection Error]", ollamaErr);
     return res.status(500).json({
-      error: "Erro ao se comunicar com o motor de IA OpenJarvis",
-      details: error.message,
+      error: `Erro ao conectar com Ollama na porta 11434: ${ollamaErr.message || String(ollamaErr)}`,
+      details: ollamaErr.stack || String(ollamaErr),
     });
   }
 });
