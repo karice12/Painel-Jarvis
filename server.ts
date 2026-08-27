@@ -45,252 +45,31 @@ interface DBStructure {
   chatChannels?: any[];
 }
 
-// In-Memory Database Store for Multi-Tenant Data & State
+// In-Memory Database Store for Multi-Tenant Data & State (starts clean without fictitious entries)
 const DB: DBStructure = {
   tenants: [
     {
       id: "tenant_omni_01",
-      name: "Nexus Enterprise S.A.",
-      subdomain: "app.nexus.omnisas.io",
+      name: "Workspace Corporativo",
+      subdomain: "app.omnisas.io",
       logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=120&auto=format&fit=crop&q=80",
       primaryColor: "#2563eb",
       themeMode: "dark",
       monthlyRequestLimit: 10000,
-      currentRequests: 1420,
+      currentRequests: 0,
       storageLimitGb: 30,
-      currentStorageGb: 1.45,
+      currentStorageGb: 0,
       apiKeyMasked: "omni_live_98fc************3a21",
-      webhookUrl: "https://api.nexus.com.br/webhooks/openjarvis",
+      webhookUrl: "",
       plan: "Enterprise Pro",
       aiModelName: "OpenJarvis v4.2 (Gemini & Ollama RAG)",
     },
   ],
-  users: [
-    {
-      id: "usr_master_01",
-      name: "Karice Pelegrino",
-      email: "pelegrinokarol@gmail.com",
-      password: "password123",
-      role: "master_admin",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise S.A.",
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      sector: "Diretoria & Tecnologia",
-      status: "online",
-      createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
-    },
-    {
-      id: "usr_admin_01",
-      name: "Carlos Rocha",
-      email: "carlos.admin@nexus.com.br",
-      password: "password123",
-      role: "admin",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise S.A.",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-      sector: "Operações & Compliance",
-      status: "online",
-      createdAt: new Date(Date.now() - 86400000 * 20).toISOString(),
-    },
-    {
-      id: "usr_user_01",
-      name: "Juliana Santos",
-      email: "juliana.santos@nexus.com.br",
-      password: "password123",
-      role: "user",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise S.A.",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-      sector: "Recursos Humanos",
-      status: "online",
-      createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
-    },
-    {
-      id: "usr_user_02",
-      name: "Rodrigo Alencar",
-      email: "rodrigo.alencar@nexus.com.br",
-      password: "password123",
-      role: "user",
-      tenantId: "tenant_omni_01",
-      tenantName: "Nexus Enterprise S.A.",
-      avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
-      sector: "Comercial & Vendas",
-      status: "away",
-      createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-    },
-  ],
-  documents: [
-    {
-      id: "doc_01",
-      tenantId: "tenant_omni_01",
-      name: "Politica_Seguranca_Informacao_2026.pdf",
-      size: "2.4 MB",
-      sizeBytes: 2516582,
-      sector: "Tecnologia & Inovação",
-      uploadedAt: new Date(Date.now() - 86400000 * 4).toISOString(),
-      uploadedBy: "Karice Pelegrino",
-      indexStatus: "indexed",
-      visibility: "company",
-      contentSnippet: "Diretrizes de conformidade LGPD (Lei 13.709/2018), controle de acesso baseado em papéis (RBAC), criptografia em repouso AES-256 e políticas de retenção de logs por 5 anos.",
-      fileType: "pdf",
-      tokensEstimated: 1250,
-    },
-    {
-      id: "doc_02",
-      tenantId: "tenant_omni_01",
-      name: "Manual_Onboarding_Colaboradores_Nexus.pdf",
-      size: "1.8 MB",
-      sizeBytes: 1887436,
-      sector: "Recursos Humanos",
-      uploadedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      uploadedBy: "Juliana Santos",
-      indexStatus: "indexed",
-      visibility: "company",
-      contentSnippet: "Guia de boas-vindas, estrutura organizacional, benefícios corporativos, canais oficiais de comunicação interna e procedimentos para agendamento de reuniões e férias.",
-      fileType: "pdf",
-      tokensEstimated: 980,
-    },
-    {
-      id: "doc_03",
-      tenantId: "tenant_omni_01",
-      name: "Tabela_Precos_Enterprise_Q3.xlsx",
-      size: "850 KB",
-      sizeBytes: 870400,
-      sector: "Comercial & Vendas",
-      uploadedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-      uploadedBy: "Rodrigo Alencar",
-      indexStatus: "indexed",
-      visibility: "sector",
-      contentSnippet: "Tabela de precificação corporativa para planos Pro e Enterprise, regras de desconto por volume e SLA de atendimento 24/7 com suporte dedicado.",
-      fileType: "xlsx",
-      tokensEstimated: 640,
-    },
-  ],
-  auditLogs: [
-    {
-      id: "log_init_01",
-      timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-      userId: "sys_core",
-      userName: "Sistema OmniJarvis",
-      userEmail: "system@nexus.com.br",
-      userRole: "master_admin",
-      action: "SYSTEM_BOOT_COMPLIANCE",
-      details: "Inicialização dos módulos corporativos e validação de trilha de auditoria LGPD.",
-      ipAddress: "127.0.0.1",
-      tenantId: "tenant_omni_01",
-      status: "success",
-      metadata: { engine: "OmniJarvis Core v4.2" },
-    },
-    {
-      id: "log_init_02",
-      timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
-      userId: "usr_master_01",
-      userName: "Karice Pelegrino",
-      userEmail: "pelegrinokarol@gmail.com",
-      userRole: "master_admin",
-      action: "AUTH_LOGIN_SUCCESS",
-      details: "Autenticação bem-sucedida de Master Admin com verificação de credenciais e permissões RBAC.",
-      ipAddress: "189.40.122.15",
-      tenantId: "tenant_omni_01",
-      status: "success",
-      metadata: { role: "master_admin", method: "jwt_stateless" },
-    },
-    {
-      id: "log_init_03",
-      timestamp: new Date(Date.now() - 1800000).toISOString(),
-      userId: "usr_master_01",
-      userName: "Karice Pelegrino",
-      userEmail: "pelegrinokarol@gmail.com",
-      userRole: "master_admin",
-      action: "SECURITY_POLICY_CHECK",
-      details: "Verificação de políticas de isolamento multi-tenant e permissões de acesso aos documentos RAG.",
-      ipAddress: "189.40.122.15",
-      tenantId: "tenant_omni_01",
-      status: "success",
-      metadata: { isolation: "verified" },
-    },
-  ],
-  events: [
-    {
-      id: "evt_01",
-      title: "Reunião de Alinhamento Executivo",
-      description: "Planejamento estratégico de expansão multi-tenant e governança de dados.",
-      date: new Date().toISOString().split("T")[0],
-      startTime: "10:00",
-      endTime: "11:00",
-      category: "reuniao",
-      sector: "Diretoria & Tecnologia",
-      participants: ["Karice Pelegrino", "Carlos Rocha"],
-      meetUrl: "https://meet.google.com/omni-exec",
-      isAiGenerated: false,
-    },
-    {
-      id: "evt_02",
-      title: "Treinamento de Equipe: RAG & OpenJarvis",
-      description: "Capacitação sobre consultas semânticas e busca web em tempo real no dashboard.",
-      date: new Date(Date.now() + 86400000).toISOString().split("T")[0],
-      startTime: "14:30",
-      endTime: "15:30",
-      category: "ia_gerado",
-      sector: "Tecnologia & Inovação",
-      participants: ["Toda a Equipe"],
-      meetUrl: "https://meet.google.com/omni-train",
-      isAiGenerated: true,
-    },
-  ],
-  chatMessages: [
-    {
-      id: "msg_chat_01",
-      channelId: "chan_geral",
-      senderId: "usr_master_01",
-      senderName: "Karice Pelegrino",
-      senderAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      senderRole: "master_admin",
-      senderSector: "Diretoria & Tecnologia",
-      text: "Bem-vindos ao workspace corporativo OmniJarvis! Todos os módulos de IA, RAG e segurança estão ativos.",
-      timestamp: new Date(Date.now() - 3600000 * 3).toISOString(),
-      attachments: [],
-      reactions: { "🚀": ["usr_admin_01", "usr_user_01"] },
-      tenantId: "tenant_omni_01",
-    },
-    {
-      id: "msg_chat_02",
-      channelId: "chan_geral",
-      senderId: "usr_admin_01",
-      senderName: "Carlos Rocha",
-      senderAvatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-      senderRole: "admin",
-      senderSector: "Operações & Compliance",
-      text: "Documentos de compliance LGPD e onboarding foram indexados na Base de Conhecimento.",
-      timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
-      attachments: [],
-      reactions: { "👍": ["usr_master_01"] },
-      tenantId: "tenant_omni_01",
-    },
-    {
-      id: "msg_chat_03",
-      channelId: "chan_geral",
-      senderId: "usr_master_01",
-      senderName: "Karice Pelegrino",
-      senderAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      senderRole: "master_admin",
-      senderSector: "Tecnologia & Inovação",
-      text: "Arquivo compartilhado: Gemini-Generated-Image-z73n9rz73n9rz73n.jpg",
-      timestamp: new Date(Date.now() - 3600000 * 1).toISOString(),
-      attachments: [
-        {
-          id: "att_01",
-          name: "Gemini-Generated-Image-z73n9rz73n9rz73n.jpg",
-          size: "186 KB",
-          type: "image",
-          fileType: "jpg",
-          url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80",
-        },
-      ],
-      reactions: { "👍": ["usr_admin_01"], "❤️": ["usr_master_01"], "🚀": ["usr_user_01"], "👏": ["usr_user_02"] },
-      tenantId: "tenant_omni_01",
-    },
-  ],
+  users: [],
+  documents: [],
+  auditLogs: [],
+  events: [],
+  chatMessages: [],
   chatChannels: [
     {
       id: "chan_geral",
@@ -386,13 +165,31 @@ app.post("/api/auth/login", (req, res) => {
   );
 
   // If selecting by role (quick role switcher)
-  if (!user && roleChoice) {
+  if (!user && roleChoice && DB.users.length > 0) {
     user = DB.users.find((u) => u.role === roleChoice);
   }
 
   if (!user) {
-    // Default fallback to master_admin for test demo
-    user = DB.users[0];
+    const cleanEmail = (email || "").trim().toLowerCase() || "admin@workspace.com";
+    const rawName = cleanEmail.split("@")[0].replace(/[._-]/g, " ");
+    const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    const isFirst = DB.users.length === 0;
+    const assignedRole = roleChoice || (isFirst || cleanEmail.includes("master") ? "master_admin" : cleanEmail.includes("admin") ? "admin" : "user");
+
+    user = {
+      id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      name: formattedName || "Administrador",
+      email: cleanEmail,
+      password: password || "password123",
+      role: assignedRole,
+      tenantId: "tenant_omni_01",
+      tenantName: DB.tenants[0]?.name || "Workspace Corporativo",
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      sector: "Tecnologia & Inovação",
+      status: "online",
+      createdAt: new Date().toISOString(),
+    };
+    DB.users.push(user);
   }
 
   const tenant =
@@ -444,11 +241,30 @@ app.post("/api/auth/login", (req, res) => {
 
 // 3. Auth: Magic Link login (Supabase Auth style)
 app.post("/api/auth/magic-link", (req, res) => {
-  const { email, token: magicToken } = req.body;
+  const { email } = req.body;
+  const cleanEmail = (email || "").trim().toLowerCase();
 
-  const user =
-    DB.users.find((u) => u.email.toLowerCase() === (email || "").toLowerCase()) ||
-    DB.users[0];
+  let user = DB.users.find((u) => u.email.toLowerCase() === cleanEmail);
+  if (!user) {
+    const rawName = cleanEmail ? cleanEmail.split("@")[0].replace(/[._-]/g, " ") : "Colaborador";
+    const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    const isFirst = DB.users.length === 0;
+
+    user = {
+      id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      name: formattedName || "Colaborador",
+      email: cleanEmail || "colaborador@workspace.com",
+      password: "password123",
+      role: isFirst ? "master_admin" : "user",
+      tenantId: "tenant_omni_01",
+      tenantName: DB.tenants[0]?.name || "Workspace Corporativo",
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      sector: "Tecnologia & Inovação",
+      status: "online",
+      createdAt: new Date().toISOString(),
+    };
+    DB.users.push(user);
+  }
 
   const tenant =
     DB.tenants.find((t) => t.id === user.tenantId) || DB.tenants[0];
@@ -512,36 +328,43 @@ app.get("/api/auth/me", (req, res) => {
         Buffer.from(parts[1], "base64").toString("utf-8")
       );
       const user =
-        DB.users.find((u) => u.id === payload.uid || u.email === payload.email) || DB.users[0];
-      const tenant =
-        DB.tenants.find((t) => t.id === user.tenantId) || DB.tenants[0];
+        DB.users.find((u) => u.id === payload.uid || u.email?.toLowerCase() === (payload.email || "").toLowerCase());
 
-      return res.json({
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          tenantId: user.tenantId,
-          tenantName: tenant.name,
-          avatar: user.avatar,
-          sector: user.sector,
-          status: user.status,
-          needsPasswordChange: user.needsPasswordChange || false,
-          temporaryPassword: user.temporaryPassword,
-          createdAt: user.createdAt,
-        },
-        tenant,
-      });
+      if (user) {
+        const tenant =
+          DB.tenants.find((t) => t.id === user.tenantId) || DB.tenants[0];
+
+        return res.json({
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            tenantId: user.tenantId,
+            tenantName: tenant.name,
+            avatar: user.avatar,
+            sector: user.sector,
+            status: user.status,
+            needsPasswordChange: user.needsPasswordChange || false,
+            temporaryPassword: user.temporaryPassword,
+            createdAt: user.createdAt,
+          },
+          tenant,
+        });
+      }
     }
   } catch {
     // fallback
   }
 
-  res.json({
-    user: DB.users[0],
-    tenant: DB.tenants[0],
-  });
+  if (DB.users.length > 0) {
+    const defaultUser = DB.users[0];
+    const tenant = DB.tenants.find((t) => t.id === defaultUser.tenantId) || DB.tenants[0];
+    const { password: _, ...safeUser } = defaultUser;
+    return res.json({ user: safeUser, tenant });
+  }
+
+  return res.status(401).json({ error: "Sessão não encontrada" });
 });
 
 // 4.1 Auth: User Registration
@@ -1320,7 +1143,7 @@ app.post("/api/audit-logs", handlePostAuditLog);
 
 // 11. Tenant White-Label & Config Update
 app.post("/api/tenant/config", (req, res) => {
-  const { tenantId, name, primaryColor, logoUrl, subdomain, webhookUrl } = req.body;
+  const { tenantId, name, primaryColor, logoUrl, subdomain, webhookUrl, adminUserId, adminUserName, adminUserEmail, adminUserRole } = req.body;
   const tenant = DB.tenants.find((t) => t.id === (tenantId || "tenant_omni_01"));
 
   if (tenant) {
@@ -1331,10 +1154,10 @@ app.post("/api/tenant/config", (req, res) => {
     if (webhookUrl !== undefined) tenant.webhookUrl = webhookUrl;
 
     recordAuditLog(
-      "usr_master_01",
-      "Rodrigo Alencar",
-      "rodrigo.master@nexus.com.br",
-      "master_admin",
+      adminUserId || "usr_admin",
+      adminUserName || "Administrador",
+      adminUserEmail || "admin@workspace.com",
+      adminUserRole || "master_admin",
       "CONFIG_TENANT_UPDATE",
       `Configurações de marca e White-Label atualizadas para o tenant ${tenant.name}`,
       tenant.id,
@@ -1357,7 +1180,7 @@ app.get("/api/users", (req, res) => {
 });
 
 app.post(["/api/users", "/api/users/invite"], (req, res) => {
-  const { name, email, role, sector, tenantId, tenantName, status, avatar, password, generateTempPassword } = req.body;
+  const { name, email, role, sector, tenantId, tenantName, status, avatar, password, generateTempPassword, adminUserId, adminUserName, adminUserEmail, adminUserRole } = req.body;
   if (!email) {
     return res.status(400).json({ error: "E-mail corporativo obrigatório" });
   }
@@ -1395,10 +1218,10 @@ app.post(["/api/users", "/api/users/invite"], (req, res) => {
   DB.users.push(newUser);
 
   recordAuditLog(
-    "usr_master_01",
-    "Karice Pelegrino",
-    "karice.pelegrinosilva@gmail.com",
-    "master_admin",
+    adminUserId || "usr_admin",
+    adminUserName || "Administrador",
+    adminUserEmail || "admin@workspace.com",
+    adminUserRole || "master_admin",
     "USER_MEMBER_INVITED",
     `Novo usuário '${newUser.name}' (${newUser.email}) cadastrado com senha provisória e role '${newUser.role}' no setor '${newUser.sector}'`,
     tenant.id,
@@ -1413,7 +1236,7 @@ app.post(["/api/users", "/api/users/invite"], (req, res) => {
 // Admin Reset Password endpoint
 app.post("/api/users/:id/reset-password", (req, res) => {
   const { id } = req.params;
-  const { newPassword } = req.body;
+  const { newPassword, adminUserId, adminUserName, adminUserEmail, adminUserRole } = req.body;
   const user = DB.users.find((u) => u.id === id);
 
   if (!user) {
@@ -1426,10 +1249,10 @@ app.post("/api/users/:id/reset-password", (req, res) => {
   user.temporaryPassword = generatedPassword;
 
   recordAuditLog(
-    "usr_master_01",
-    "Karice Pelegrino",
-    "karice.pelegrinosilva@gmail.com",
-    "master_admin",
+    adminUserId || "usr_admin",
+    adminUserName || "Administrador",
+    adminUserEmail || "admin@workspace.com",
+    adminUserRole || "master_admin",
     "USER_PASSWORD_RESET",
     `Senha do colaborador '${user.name}' (${user.email}) redefinida com flag de troca obrigatória no próximo login`,
     user.tenantId,
@@ -1500,7 +1323,6 @@ app.post("/api/auth/forgot-password", (req, res) => {
   const user = DB.users.find((u) => u.email.toLowerCase() === cleanEmail);
 
   if (!user) {
-    // Return friendly message even if not found for security, or explicit for demo
     return res.status(404).json({ error: "Nenhum colaborador encontrado com este e-mail corporativo." });
   }
 
@@ -1530,7 +1352,7 @@ app.post("/api/auth/forgot-password", (req, res) => {
 
 app.patch("/api/users/:id/role", (req, res) => {
   const { id } = req.params;
-  const { role } = req.body;
+  const { role, adminUserId, adminUserName, adminUserEmail, adminUserRole } = req.body;
   const user = DB.users.find((u) => u.id === id);
 
   if (user) {
@@ -1538,10 +1360,10 @@ app.patch("/api/users/:id/role", (req, res) => {
     user.role = role;
 
     recordAuditLog(
-      "usr_master_01",
-      "Rodrigo Alencar",
-      "rodrigo.master@nexus.com.br",
-      "master_admin",
+      adminUserId || "usr_admin",
+      adminUserName || "Administrador",
+      adminUserEmail || "admin@workspace.com",
+      adminUserRole || "master_admin",
       "USER_ROLE_CHANGED",
       `Role de '${user.name}' alterada de ${oldRole} para ${role}`,
       user.tenantId,
@@ -1557,6 +1379,7 @@ app.patch("/api/users/:id/role", (req, res) => {
 
 app.delete("/api/users/:id", (req, res) => {
   const { id } = req.params;
+  const { adminUserId, adminUserName, adminUserEmail, adminUserRole } = req.body || {};
   const userIdx = DB.users.findIndex((u) => u.id === id);
 
   if (userIdx !== -1) {
@@ -1568,10 +1391,10 @@ app.delete("/api/users/:id", (req, res) => {
     DB.users.splice(userIdx, 1);
 
     recordAuditLog(
-      "usr_master_01",
-      "Rodrigo Alencar",
-      "rodrigo.master@nexus.com.br",
-      "master_admin",
+      adminUserId || "usr_admin",
+      adminUserName || "Administrador",
+      adminUserEmail || "admin@workspace.com",
+      adminUserRole || "master_admin",
       "USER_MEMBER_REMOVED",
       `Colaborador '${deletedUser.name}' (${deletedUser.email}) desativado/removido do tenant`,
       deletedUser.tenantId || "tenant_omni_01",

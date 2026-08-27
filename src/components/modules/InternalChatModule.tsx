@@ -167,7 +167,7 @@ export const InternalChatModule: React.FC = () => {
           params.append("channelId", activeChannelId);
         } else if (activeDmUserId) {
           params.append("recipientId", activeDmUserId);
-          params.append("senderId", user?.id || "usr_user_01");
+          params.append("senderId", user?.id || "usr_current");
         }
 
         const res = await fetch(`/api/chat/messages?${params.toString()}`);
@@ -237,7 +237,7 @@ export const InternalChatModule: React.FC = () => {
       id: `msg_${Date.now()}`,
       channelId: activeChatType === "channel" ? activeChannelId : undefined,
       recipientId: activeChatType === "dm" && activeDmUserId ? activeDmUserId : undefined,
-      senderId: user?.id || "usr_user_01",
+      senderId: user?.id || "usr_current",
       senderName: user?.name || "Colaborador",
       senderAvatar:
         user?.avatar ||
@@ -288,7 +288,7 @@ export const InternalChatModule: React.FC = () => {
       const res = await fetch(`/api/chat/messages/${msgId}/react`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emoji, userId: user?.id || "usr_user_01" }),
+        body: JSON.stringify({ emoji, userId: user?.id || "usr_current" }),
       });
 
       if (res.ok) {
@@ -304,7 +304,7 @@ export const InternalChatModule: React.FC = () => {
           if (m.id !== msgId) return m;
           const currentReactions = { ...m.reactions };
           const userList = currentReactions[emoji] || [];
-          const uid = user?.id || "usr_user_01";
+          const uid = user?.id || "usr_current";
           if (userList.includes(uid)) {
             currentReactions[emoji] = userList.filter((u) => u !== uid);
             if (currentReactions[emoji].length === 0) delete currentReactions[emoji];

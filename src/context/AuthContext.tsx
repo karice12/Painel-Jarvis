@@ -33,8 +33,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const DEFAULT_FALLBACK_TENANT: TenantConfig = {
   id: "tenant_omni_01",
-  name: "Nexus Enterprise S.A.",
-  subdomain: "nexus.omnisas.io",
+  name: "Workspace Corporativo",
+  subdomain: "app.omnisas.io",
   logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=120&auto=format&fit=crop&q=80",
   primaryColor: "#2563eb",
   themeMode: "dark",
@@ -43,7 +43,7 @@ const DEFAULT_FALLBACK_TENANT: TenantConfig = {
   storageLimitGb: 30,
   currentStorageGb: 0,
   apiKeyMasked: "omni_live_98fc************3a21",
-  webhookUrl: "https://api.nexus.com.br/webhooks/openjarvis",
+  webhookUrl: "",
   plan: "Enterprise Pro",
   aiModelName: "OpenJarvis v4.2 (Gemini Flash Engine)",
 };
@@ -81,7 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return {
       id: userId || "usr_fallback_" + Math.random().toString(36).substring(2, 9),
       name: formattedName || "Colaborador",
-      email: userEmail || "colaborador@nexus.com.br",
+      email: userEmail || "colaborador@workspace.com",
       role: fallbackRole,
       tenantId: "tenant_omni_01",
       tenantName: DEFAULT_FALLBACK_TENANT.name,
