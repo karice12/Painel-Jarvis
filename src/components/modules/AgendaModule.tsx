@@ -17,9 +17,10 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { CalendarEvent } from "../../types";
 import { cn } from "../../lib/utils";
+import { getAgendaEventsFromDb, saveAgendaEventToDb } from "../../services/supabaseDb";
 
 export const AgendaModule: React.FC = () => {
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
 
   const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -28,8 +29,17 @@ export const AgendaModule: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchEvents = async () => {
+    const tenantId = tenant?.id || user?.tenantId || "tenant_omni_01";
     try {
       setLoading(true);
+      // 1. Try Supabase direct fetch
+      const dbEvents = await getAgendaEventsFromDb(tenantId);
+      if (dbEvents && dbEvents.length > 0) {
+        setEvents(dbEvents);
+        return;
+      }
+
+      // 2. Fallback to API
       const res = await fetch("/api/events");
       if (res.ok) {
         const data = await res.json();
@@ -46,7 +56,7 @@ export const AgendaModule: React.FC = () => {
 
   useEffect(() => {
     fetchEvents();
-  }, []);
+  }, [tenant?.id, user?.tenantId]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAiQuickCreateOpen, setIsAiQuickCreateOpen] = useState(false);
@@ -84,6 +94,7 @@ export const AgendaModule: React.FC = () => {
         const data = await res.json();
         if (data.event) {
           setEvents((prev) => [...prev, data.event]);
+          saveAgendaEventToDb(data.event, tenant?.id || "tenant_omni_01", user?.id);
         }
       } else {
         throw new Error("Erro na API");
@@ -103,6 +114,7 @@ export const AgendaModule: React.FC = () => {
         isAiGenerated: true,
       };
       setEvents((prev) => [...prev, fallbackEvent]);
+      saveAgendaEventToDb(fallbackEvent, tenant?.id || "tenant_omni_01", user?.id);
     } finally {
       setIsParsingAi(false);
       setIsAiQuickCreateOpen(false);
@@ -114,7 +126,9 @@ export const AgendaModule: React.FC = () => {
     e.preventDefault();
     if (!newTitle) return;
 
-    const newEventPayload = {
+    const eventId = `evt_${Date.now()}`;
+    const newEventPayload: CalendarEvent = {
+      id: eventId,
       title: newTitle,
       description: newDesc,
       date: newDate,
@@ -127,6 +141,9 @@ export const AgendaModule: React.FC = () => {
       isAiGenerated: false,
     };
 
+    // Save directly to Supabase
+    saveAgendaEventToDb(newEventPayload, tenant?.id || "tenant_omni_01", user?.id);
+
     try {
       const res = await fetch("/api/events", {
         method: "POST",
@@ -136,12 +153,12 @@ export const AgendaModule: React.FC = () => {
 
       if (res.ok) {
         const data = await res.json();
-        setEvents((prev) => [...prev, data.event || { id: `evt_${Date.now()}`, ...newEventPayload }]);
+        setEvents((prev) => [...prev, data.event || newEventPayload]);
       } else {
-        setEvents((prev) => [...prev, { id: `evt_${Date.now()}`, ...newEventPayload }]);
+        setEvents((prev) => [...prev, newEventPayload]);
       }
     } catch {
-      setEvents((prev) => [...prev, { id: `evt_${Date.now()}`, ...newEventPayload }]);
+      setEvents((prev) => [...prev, newEventPayload]);
     } finally {
       setIsModalOpen(false);
       setNewTitle("");

@@ -36,6 +36,7 @@ import { OpenJarvisMessage, RagCitation, WebSearchQuotaInfo } from "../../types"
 import { cn, sanitizeInput } from "../../lib/utils";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getWebSearchQuota, sendChatMessage, getAiUsageStatus } from "../../services/api";
+import { getAiChatHistoryFromDb, saveAiChatMessageToDb } from "../../services/supabaseDb";
 
 interface AiChatModuleProps {
   onAddEventToAgenda?: (event: any) => void;
@@ -120,6 +121,22 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
   useEffect(() => {
     fetchQuotaStatus();
   }, [fetchQuotaStatus]);
+
+  // Load chat history from Supabase on component mount
+  useEffect(() => {
+    async function loadHistory() {
+      if (!tenant?.id) return;
+      try {
+        const history = await getAiChatHistoryFromDb(tenant.id, user?.id);
+        if (history && history.length > 0) {
+          setMessages(history);
+        }
+      } catch (err) {
+        console.warn("Could not load AI chat history:", err);
+      }
+    }
+    loadHistory();
+  }, [tenant?.id, user?.id]);
 
   // Speech-to-Text (STT) using Web Speech API
   const toggleRecording = () => {
@@ -316,6 +333,18 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     setMessages((prev) => [...prev, userMsg]);
     setIsGenerating(true);
 
+    // Persist user message to Supabase
+    saveAiChatMessageToDb({
+      id: userMsg.id,
+      sender: "user",
+      text: sanitizedText,
+      tenantId: tenant?.id || "tenant_omni_01",
+      userId: user?.id,
+      userName: user?.name,
+      userSector: user?.sector,
+      webSearchUsed: isWebSearchEnabled,
+    }).catch((e) => console.warn("Supabase user msg save error:", e));
+
     try {
       const data = await sendChatMessage({
         message: sanitizedText,
@@ -344,6 +373,23 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
       const fullResponseText = data.text;
       const msgId = `ai_${Date.now()}`;
+
+      // Persist assistant message to Supabase
+      saveAiChatMessageToDb({
+        id: msgId,
+        sender: "assistant",
+        text: fullResponseText,
+        tenantId: tenant?.id || "tenant_omni_01",
+        userId: user?.id,
+        userName: "OpenJarvis AI",
+        userSector: user?.sector,
+        ragConsulted: data.ragConsulted,
+        ragSources: data.ragSources,
+        webSearchUsed: data.webSearchUsed,
+        webSearchSources: data.webSearchSources,
+        tokensUsed: data.tokensUsed,
+        suggestedEvent: data.suggestedEvent,
+      }).catch((e) => console.warn("Supabase assistant msg save error:", e));
 
       // Update Web Search quota locally
       fetchQuotaStatus();

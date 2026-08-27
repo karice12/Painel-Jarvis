@@ -24,6 +24,11 @@ import { useAuth } from "../../context/AuthContext";
 import { DocumentItem, DocumentVisibility } from "../../types";
 import { cn, formatDateBR } from "../../lib/utils";
 import { uploadDocumentToStorage, deleteDocumentFromStorage } from "../../lib/supabase";
+import {
+  getKnowledgeBaseDocsFromDb,
+  saveKnowledgeBaseDocToDb,
+  deleteKnowledgeBaseDocFromDb,
+} from "../../services/supabaseDb";
 
 export const KnowledgeBaseModule: React.FC = () => {
   const { user, tenant, canManageTenant } = useAuth();
@@ -32,10 +37,20 @@ export const KnowledgeBaseModule: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchDocuments = async () => {
+    const tenantId = tenant?.id || "tenant_omni_01";
     try {
       setLoading(true);
+
+      // 1. Fetch from Supabase direct
+      const dbDocs = await getKnowledgeBaseDocsFromDb(tenantId, user?.sector, user?.role);
+      if (dbDocs && dbDocs.length > 0) {
+        setDocuments(dbDocs);
+        return;
+      }
+
+      // 2. Fallback to API
       const res = await fetch(
-        `/api/documents?tenantId=${tenant?.id || "tenant_omni_01"}&sector=${encodeURIComponent(
+        `/api/documents?tenantId=${tenantId}&sector=${encodeURIComponent(
           user?.sector || ""
         )}&userRole=${user?.role || "user"}`
       );
@@ -139,6 +154,7 @@ export const KnowledgeBaseModule: React.FC = () => {
         const data = await res.json();
         if (data.document) {
           setDocuments((prev) => [data.document, ...prev]);
+          saveKnowledgeBaseDocToDb(data.document, tenant?.id || "tenant_omni_01");
         }
       }
     } catch {
@@ -158,6 +174,7 @@ export const KnowledgeBaseModule: React.FC = () => {
         contentSnippet: newDocSnippet || "Documento indexado com sucesso.",
       };
       setDocuments((prev) => [fallbackDoc, ...prev]);
+      saveKnowledgeBaseDocToDb(fallbackDoc, tenant?.id || "tenant_omni_01");
     } finally {
       setIsUploading(false);
       setIsUploadModalOpen(false);
@@ -169,6 +186,7 @@ export const KnowledgeBaseModule: React.FC = () => {
 
   const handleDeleteDoc = async (id: string) => {
     if (confirm("Tem certeza que deseja remover este documento da Base de Conhecimento RAG?")) {
+      deleteKnowledgeBaseDocFromDb(id);
       try {
         await fetch(`/api/documents/${id}`, { method: "DELETE" });
       } catch {
