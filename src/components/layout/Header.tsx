@@ -22,19 +22,7 @@ interface HeaderProps {
   activeTab?: NavTab | string;
 }
 
-const TAB_TITLES: Record<string, string> = {
-  dashboard: "Dashboard de Métricas",
-  ai_chat: "Assistente OpenJarvis (IA + RAG)",
-  internal_chat: "Comunicação Interna & Equipes",
-  knowledge_base: "Base de Conhecimento & Documentos",
-  agenda: "Agenda Corporativa & Eventos",
-  audit_logs: "Logs de Auditoria & Segurança LGPD",
-  settings: "Configurações White-Label & API",
-};
-
-export const Header: React.FC<HeaderProps> = ({ currentTabName, activeTab }) => {
-  const displayTitle =
-    currentTabName || (activeTab && TAB_TITLES[activeTab]) || "Dashboard";
+export const Header: React.FC<HeaderProps> = () => {
   const {
     user,
     tenant,
@@ -89,21 +77,8 @@ export const Header: React.FC<HeaderProps> = ({ currentTabName, activeTab }) => 
       id="app-header"
       className="h-18 px-6 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-20 flex items-center justify-between"
     >
-      {/* Left: Breadcrumbs / Title */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-            {tenant?.name || "OmniSaaS"}
-          </span>
-          <span className="text-slate-300 dark:text-slate-700">/</span>
-          <h1 className="text-base font-bold text-slate-900 dark:text-white">
-            {displayTitle}
-          </h1>
-        </div>
-      </div>
-
-      {/* Center Search Bar simulation */}
-      <div className="hidden lg:flex items-center relative max-w-md w-full mx-6">
+      {/* Left: Global Search Input */}
+      <div className="flex items-center relative max-w-md w-full">
         <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
         <input
           id="global-search-input"
