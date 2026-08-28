@@ -44,6 +44,12 @@ export interface TenantConfig {
   webhookUrl?: string;
   plan: 'Starter' | 'Business' | 'Enterprise Pro';
   aiModelName?: string;
+  sectors?: string[];
+  aiSettings?: {
+    temperature?: number;
+    maxOutputTokens?: number;
+    enableRagAutoSearch?: boolean;
+  };
 }
 
 export interface RagCitation {

@@ -52,8 +52,10 @@ const DB: DBStructure = {
       id: "tenant_omni_01",
       name: "Workspace Corporativo",
       subdomain: "app.omnisas.io",
+      customDomain: "app.omnisas.io",
       logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=120&auto=format&fit=crop&q=80",
       primaryColor: "#2563eb",
+      secondaryColor: "#0f172a",
       themeMode: "dark",
       monthlyRequestLimit: 10000,
       currentRequests: 0,
@@ -63,6 +65,21 @@ const DB: DBStructure = {
       webhookUrl: "",
       plan: "Enterprise Pro",
       aiModelName: "OpenJarvis v4.2 (Gemini & Ollama RAG)",
+      sectors: [
+        "Diretoria & Tecnologia",
+        "Tecnologia & Inovação",
+        "Financeiro & Controladoria",
+        "Comercial & Vendas",
+        "Jurídico & Compliance",
+        "Recursos Humanos",
+        "Marketing & Growth",
+        "Operações & Suporte"
+      ],
+      aiSettings: {
+        temperature: 0.3,
+        maxOutputTokens: 2048,
+        enableRagAutoSearch: true,
+      },
     },
   ],
   users: [],
@@ -781,6 +798,25 @@ Se o usuário solicitar agendamento, reunião ou marcar compromisso, forneça a 
           parts: [{ text: h.text }],
         }));
 
+        // Calculate dynamic temperature and maxTokens from payload or tenant config
+        const dynamicTemp =
+          typeof req.body?.temperature === "number"
+            ? req.body.temperature
+            : typeof req.body?.aiSettings?.temperature === "number"
+            ? req.body.aiSettings.temperature
+            : typeof tenant?.aiSettings?.temperature === "number"
+            ? tenant.aiSettings.temperature
+            : 0.3;
+
+        const dynamicMaxTokens =
+          typeof req.body?.maxOutputTokens === "number"
+            ? req.body.maxOutputTokens
+            : typeof req.body?.aiSettings?.maxOutputTokens === "number"
+            ? req.body.aiSettings.maxOutputTokens
+            : typeof tenant?.aiSettings?.maxOutputTokens === "number"
+            ? tenant.aiSettings.maxOutputTokens
+            : 2048;
+
         const response = await gemini.models.generateContent({
           model: "gemini-2.5-flash",
           contents: [
@@ -790,6 +826,10 @@ Se o usuário solicitar agendamento, reunião ou marcar compromisso, forneça a 
               parts: [{ text: `${systemInstruction}\n\n[Mensagem do Colaborador]: ${message}` }],
             },
           ],
+          config: {
+            temperature: dynamicTemp,
+            maxOutputTokens: dynamicMaxTokens,
+          },
         });
 
         responseText = response.text || "";
@@ -1152,21 +1192,43 @@ app.post("/api/audit-logs", handlePostAuditLog);
 
 // 11. Tenant White-Label & Config Update
 app.post("/api/tenant/config", (req, res) => {
-  const { tenantId, name, primaryColor, logoUrl, subdomain, webhookUrl, adminUserId, adminUserName, adminUserEmail, adminUserRole } = req.body;
-  const tenant = DB.tenants.find((t) => t.id === (tenantId || "tenant_omni_01"));
+  const body = req.body || {};
+  const config = body.config || body;
+  const targetTenantId = body.tenantId || config.tenantId || "tenant_omni_01";
+  const tenant = DB.tenants.find((t) => t.id === targetTenantId) || DB.tenants[0];
 
   if (tenant) {
-    if (name) tenant.name = name;
-    if (primaryColor) tenant.primaryColor = primaryColor;
-    if (logoUrl) tenant.logoUrl = logoUrl;
-    if (subdomain) tenant.subdomain = subdomain;
-    if (webhookUrl !== undefined) tenant.webhookUrl = webhookUrl;
+    if (config.name) {
+      tenant.name = config.name;
+      // Sync tenant name across all users in DB
+      DB.users.forEach((u) => {
+        if (u.tenantId === tenant.id) {
+          u.tenantName = config.name;
+        }
+      });
+    }
+    if (config.primaryColor) tenant.primaryColor = config.primaryColor;
+    if (config.secondaryColor) tenant.secondaryColor = config.secondaryColor;
+    if (config.logoUrl || config.logo) {
+      tenant.logoUrl = config.logoUrl || config.logo;
+      tenant.logo = tenant.logoUrl;
+    }
+    if (config.subdomain) tenant.subdomain = config.subdomain;
+    if (config.customDomain) tenant.customDomain = config.customDomain;
+    if (config.webhookUrl !== undefined) tenant.webhookUrl = config.webhookUrl;
+    if (Array.isArray(config.sectors)) tenant.sectors = config.sectors;
+    if (config.aiSettings) {
+      tenant.aiSettings = {
+        ...tenant.aiSettings,
+        ...config.aiSettings,
+      };
+    }
 
     recordAuditLog(
-      adminUserId || "usr_admin",
-      adminUserName || "Administrador",
-      adminUserEmail || "admin@workspace.com",
-      adminUserRole || "master_admin",
+      body.adminUserId || "usr_admin",
+      body.adminUserName || "Administrador",
+      body.adminUserEmail || "admin@workspace.com",
+      body.adminUserRole || "master_admin",
       "CONFIG_TENANT_UPDATE",
       `Configurações de marca e White-Label atualizadas para o tenant ${tenant.name}`,
       tenant.id,
@@ -1177,6 +1239,89 @@ app.post("/api/tenant/config", (req, res) => {
   }
 
   res.status(404).json({ error: "Tenant não encontrado" });
+});
+
+// 11.1 Tenant Sectors CRUD
+app.get("/api/tenant/sectors", (req, res) => {
+  const { tenantId = "tenant_omni_01" } = req.query;
+  const tenant = DB.tenants.find((t) => t.id === tenantId) || DB.tenants[0];
+  const defaultSectors = [
+    "Diretoria & Tecnologia",
+    "Tecnologia & Inovação",
+    "Financeiro & Controladoria",
+    "Comercial & Vendas",
+    "Jurídico & Compliance",
+    "Recursos Humanos",
+    "Marketing & Growth",
+    "Operações & Suporte"
+  ];
+  const sectors = tenant?.sectors && tenant.sectors.length > 0 ? tenant.sectors : defaultSectors;
+  res.json({ success: true, sectors });
+});
+
+app.post("/api/tenant/sectors", (req, res) => {
+  const { tenantId = "tenant_omni_01", sectorName, adminUserName } = req.body;
+  if (!sectorName || typeof sectorName !== "string" || !sectorName.trim()) {
+    return res.status(400).json({ error: "Nome do setor é obrigatório." });
+  }
+
+  const cleanSector = sectorName.trim();
+  const tenant = DB.tenants.find((t) => t.id === tenantId) || DB.tenants[0];
+
+  if (!tenant.sectors) {
+    tenant.sectors = [
+      "Diretoria & Tecnologia",
+      "Tecnologia & Inovação",
+      "Financeiro & Controladoria",
+      "Comercial & Vendas",
+      "Jurídico & Compliance",
+      "Recursos Humanos",
+      "Marketing & Growth",
+      "Operações & Suporte"
+    ];
+  }
+
+  if (!tenant.sectors.includes(cleanSector)) {
+    tenant.sectors.push(cleanSector);
+  }
+
+  recordAuditLog(
+    "usr_admin",
+    adminUserName || "Administrador",
+    "admin@workspace.com",
+    "master_admin",
+    "SECTOR_CREATED",
+    `Novo setor corporativo criado: "${cleanSector}"`,
+    tenant.id,
+    "success"
+  );
+
+  res.json({ success: true, sector: cleanSector, sectors: tenant.sectors });
+});
+
+// 11.2 Tenant AI Parameters Update
+app.post("/api/tenant/ai-params", (req, res) => {
+  const { tenantId = "tenant_omni_01", temperature, maxOutputTokens, enableRagAutoSearch, adminUserName } = req.body;
+  const tenant = DB.tenants.find((t) => t.id === tenantId) || DB.tenants[0];
+
+  tenant.aiSettings = {
+    temperature: typeof temperature === "number" ? temperature : 0.3,
+    maxOutputTokens: typeof maxOutputTokens === "number" ? maxOutputTokens : 2048,
+    enableRagAutoSearch: enableRagAutoSearch !== false,
+  };
+
+  recordAuditLog(
+    "usr_admin",
+    adminUserName || "Administrador",
+    "admin@workspace.com",
+    "master_admin",
+    "AI_PARAMS_UPDATED",
+    `Parâmetros do motor OpenJarvis atualizados (Temp: ${tenant.aiSettings.temperature}, Tokens: ${tenant.aiSettings.maxOutputTokens}, RAG Auto: ${tenant.aiSettings.enableRagAutoSearch})`,
+    tenant.id,
+    "success"
+  );
+
+  res.json({ success: true, aiSettings: tenant.aiSettings, tenant });
 });
 
 // 12. Team Members CRUD

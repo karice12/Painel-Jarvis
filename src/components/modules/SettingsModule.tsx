@@ -20,6 +20,13 @@ import {
   Eye,
   EyeOff,
   Copy,
+  FolderPlus,
+  Layers,
+  CheckCircle2,
+  Globe,
+  Image as ImageIcon,
+  Bot,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { TenantConfig, Role, User } from "../../types";
@@ -27,24 +34,109 @@ import { cn } from "../../lib/utils";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { AdminResetPasswordModal } from "./AdminResetPasswordModal";
 
+const DEFAULT_SECTORS = [
+  "Diretoria & Tecnologia",
+  "Tecnologia & Inovação",
+  "Financeiro & Controladoria",
+  "Comercial & Vendas",
+  "Jurídico & Compliance",
+  "Recursos Humanos",
+  "Marketing & Growth",
+  "Operações & Suporte",
+];
+
 export const SettingsModule: React.FC = () => {
   const { tenant, updateTenantConfig, canManageTenant, updateUserRole, user: currentUser } = useAuth();
 
   const [activeTab, setActiveTab] = useState<"whitelabel" | "ai_params" | "members">("whitelabel");
 
   // White label state
-  const [brandName, setBrandName] = useState(tenant?.name || "Nexus Enterprise");
+  const [brandName, setBrandName] = useState(tenant?.name || "Workspace Corporativo");
   const [primaryColor, setPrimaryColor] = useState(tenant?.primaryColor || "#2563eb");
   const [secondaryColor, setSecondaryColor] = useState(tenant?.secondaryColor || "#0f172a");
   const [logoUrl, setLogoUrl] = useState(
-    tenant?.logo || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80"
+    tenant?.logoUrl || tenant?.logo || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80"
   );
-  const [customDomain, setCustomDomain] = useState(tenant?.customDomain || "app.nexus.com.br");
+  const [customDomain, setCustomDomain] = useState(tenant?.customDomain || tenant?.subdomain || "app.omnisas.io");
+
+  // Keep local state in sync if tenant changes
+  useEffect(() => {
+    if (tenant) {
+      if (tenant.name) setBrandName(tenant.name);
+      if (tenant.primaryColor) setPrimaryColor(tenant.primaryColor);
+      if (tenant.secondaryColor) setSecondaryColor(tenant.secondaryColor);
+      if (tenant.logoUrl || tenant.logo) setLogoUrl(tenant.logoUrl || tenant.logo || "");
+      if (tenant.customDomain || tenant.subdomain) setCustomDomain(tenant.customDomain || tenant.subdomain || "");
+    }
+  }, [tenant]);
 
   // AI Parameters state
-  const [temperature, setTemperature] = useState(0.3);
-  const [maxOutputTokens, setMaxOutputTokens] = useState(2048);
-  const [enableRagAutoSearch, setEnableRagAutoSearch] = useState(true);
+  const [temperature, setTemperature] = useState<number>(() => {
+    if (typeof tenant?.aiSettings?.temperature === "number") return tenant.aiSettings.temperature;
+    try {
+      const saved = localStorage.getItem("omni_ai_params");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.temperature === "number") return parsed.temperature;
+      }
+    } catch {}
+    return 0.3;
+  });
+
+  const [maxOutputTokens, setMaxOutputTokens] = useState<number>(() => {
+    if (typeof tenant?.aiSettings?.maxOutputTokens === "number") return tenant.aiSettings.maxOutputTokens;
+    try {
+      const saved = localStorage.getItem("omni_ai_params");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.maxOutputTokens === "number") return parsed.maxOutputTokens;
+      }
+    } catch {}
+    return 2048;
+  });
+
+  const [enableRagAutoSearch, setEnableRagAutoSearch] = useState<boolean>(() => {
+    if (typeof tenant?.aiSettings?.enableRagAutoSearch === "boolean") return tenant.aiSettings.enableRagAutoSearch;
+    try {
+      const saved = localStorage.getItem("omni_ai_params");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.enableRagAutoSearch === "boolean") return parsed.enableRagAutoSearch;
+      }
+    } catch {}
+    return true;
+  });
+
+  const [isAiSaving, setIsAiSaving] = useState(false);
+  const [isAiSaved, setIsAiSaved] = useState(false);
+
+  // Sectors Management state
+  const [availableSectors, setAvailableSectors] = useState<string[]>(() => {
+    if (tenant?.sectors && tenant.sectors.length > 0) return tenant.sectors;
+    return DEFAULT_SECTORS;
+  });
+  const [isCreatingSector, setIsCreatingSector] = useState(false);
+  const [newSectorInput, setNewSectorInput] = useState("");
+  const [isSectorSaving, setIsSectorSaving] = useState(false);
+
+  // Fetch Sectors from backend
+  const fetchSectors = async () => {
+    try {
+      const res = await fetch(`/api/tenant/sectors?tenantId=${tenant?.id || "tenant_omni_01"}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.sectors) && data.sectors.length > 0) {
+          setAvailableSectors(data.sectors);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    fetchSectors();
+  }, [tenant?.id]);
 
   // Members Management state
   const [members, setMembers] = useState<any[]>([]);
@@ -84,7 +176,7 @@ export const SettingsModule: React.FC = () => {
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("user");
-  const [inviteSector, setInviteSector] = useState("Tecnologia & Inovação");
+  const [inviteSector, setInviteSector] = useState(availableSectors[0] || "Tecnologia & Inovação");
   const [inviteCustomPassword, setInviteCustomPassword] = useState("");
   const [autoGenPassword, setAutoGenPassword] = useState(true);
   const [showInvitePass, setShowInvitePass] = useState(false);
@@ -100,39 +192,142 @@ export const SettingsModule: React.FC = () => {
     { name: "Amber Capital", primary: "#d97706", secondary: "#451a03" },
     { name: "Crimson Forge", primary: "#dc2626", secondary: "#450a0a" },
     { name: "Cyan Tech", primary: "#0891b2", secondary: "#083344" },
+    { name: "Slate Corporate", primary: "#475569", secondary: "#0f172a" },
+  ];
+
+  // Preset Logo Options
+  const logoPresets = [
+    { label: "Gradiente Geométrico", url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80" },
+    { label: "Design Minimalista", url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80" },
+    { label: "Corporate Blue", url: "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=150&auto=format&fit=crop&q=80" },
   ];
 
   const handleSaveWhitelabel = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
 
-    const updatedConfig = {
+    const updatedConfig: Partial<TenantConfig> = {
       name: brandName,
       primaryColor,
       secondaryColor,
       logo: logoUrl,
+      logoUrl: logoUrl,
       customDomain,
+      subdomain: customDomain,
     };
 
     try {
-      await fetch("/api/tenant/config", {
+      await updateTenantConfig(updatedConfig);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+    } catch {
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveAiParams = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAiSaving(true);
+
+    const aiSettings = {
+      temperature,
+      maxOutputTokens,
+      enableRagAutoSearch,
+    };
+
+    try {
+      // 1. Save in backend
+      await fetch("/api/tenant/ai-params", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tenantId: tenant?.id || "tenant_omni_01",
-          config: updatedConfig,
+          temperature,
+          maxOutputTokens,
+          enableRagAutoSearch,
+          adminUserName: currentUser?.name,
         }),
       });
 
-      updateTenantConfig(updatedConfig);
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 2500);
-    } catch {
-      updateTenantConfig(updatedConfig);
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 2500);
+      // 2. Save in AuthContext and localStorage
+      await updateTenantConfig({ aiSettings });
+      try {
+        localStorage.setItem("omni_ai_params", JSON.stringify(aiSettings));
+      } catch {}
+
+      setIsAiSaved(true);
+      setTimeout(() => setIsAiSaved(false), 3000);
+    } catch (e: any) {
+      console.warn("AI Params save local fallback:", e);
+      try {
+        localStorage.setItem("omni_ai_params", JSON.stringify(aiSettings));
+      } catch {}
+      await updateTenantConfig({ aiSettings });
+      setIsAiSaved(true);
+      setTimeout(() => setIsAiSaved(false), 3000);
     } finally {
-      setIsSaving(false);
+      setIsAiSaving(false);
+    }
+  };
+
+  const handleCreateNewSector = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSectorInput || !newSectorInput.trim()) return;
+
+    const sectorName = newSectorInput.trim();
+    if (availableSectors.some((s) => s.toLowerCase() === sectorName.toLowerCase())) {
+      setInviteSector(availableSectors.find((s) => s.toLowerCase() === sectorName.toLowerCase()) || sectorName);
+      setIsCreatingSector(false);
+      setNewSectorInput("");
+      return;
+    }
+
+    setIsSectorSaving(true);
+    try {
+      const res = await fetch("/api/tenant/sectors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId: tenant?.id || "tenant_omni_01",
+          sectorName,
+          adminUserName: currentUser?.name,
+        }),
+      });
+
+      let updatedList = [...availableSectors, sectorName];
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.sectors)) {
+          updatedList = data.sectors;
+        }
+      }
+
+      setAvailableSectors(updatedList);
+      setInviteSector(sectorName);
+      await updateTenantConfig({ sectors: updatedList });
+
+      setInviteStatus({
+        type: "success",
+        message: `Novo setor "${sectorName}" criado e selecionado com sucesso!`,
+      });
+      setTimeout(() => {
+        setInviteStatus((curr) => (curr?.type === "success" && curr.message.includes(sectorName) ? null : curr));
+      }, 4000);
+
+      setIsCreatingSector(false);
+      setNewSectorInput("");
+    } catch (e: any) {
+      const updatedList = [...availableSectors, sectorName];
+      setAvailableSectors(updatedList);
+      setInviteSector(sectorName);
+      await updateTenantConfig({ sectors: updatedList });
+      setIsCreatingSector(false);
+      setNewSectorInput("");
+    } finally {
+      setIsSectorSaving(false);
     }
   };
 
@@ -217,7 +412,7 @@ export const SettingsModule: React.FC = () => {
           role: inviteRole,
           sector: inviteSector,
           tenantId: tenant?.id || "tenant_omni_01",
-          tenantName: tenant?.name || "Nexus Enterprise",
+          tenantName: tenant?.name || "Workspace Corporativo",
           status: "online",
           password: autoGenPassword ? undefined : inviteCustomPassword,
         }),
@@ -233,7 +428,7 @@ export const SettingsModule: React.FC = () => {
 
         setInviteStatus({
           type: "success",
-          message: `Colaborador ${trimmedName} convidado com sucesso! Foi gerada uma senha provisória de acesso. No primeiro login, o colaborador será solicitado a cadastrar a senha definitiva.`,
+          message: `Colaborador ${trimmedName} convidado com sucesso para o setor ${inviteSector}! Foi gerada uma senha provisória de acesso. No primeiro login, o colaborador definirá sua senha definitiva.`,
           temporaryPassword: tempPass,
         });
       } else {
@@ -331,14 +526,21 @@ export const SettingsModule: React.FC = () => {
             </h2>
           </div>
           <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-            Personalize a identidade visual do SaaS, configure os parâmetros de IA do OpenJarvis e gerencie membros da sua organização.
+            Personalize a identidade visual do SaaS, configure os parâmetros de IA do OpenJarvis e gerencie setores e colaboradores da sua organização.
           </p>
         </div>
 
         {isSaved && (
-          <div className="px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
-            <Check className="w-4 h-4" />
-            <span>Configurações atualizadas!</span>
+          <div className="px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5 animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Identidade Visual salva com sucesso!</span>
+          </div>
+        )}
+
+        {isAiSaved && (
+          <div className="px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5 animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Parâmetros de IA salvos com sucesso!</span>
           </div>
         )}
       </div>
@@ -351,7 +553,7 @@ export const SettingsModule: React.FC = () => {
           className={cn(
             "px-4 py-2 rounded-xl transition-all flex items-center gap-2",
             activeTab === "whitelabel"
-              ? "bg-blue-600 text-white shadow-xs"
+              ? "bg-blue-600 text-white shadow-xs font-bold"
               : "text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
           )}
         >
@@ -365,7 +567,7 @@ export const SettingsModule: React.FC = () => {
           className={cn(
             "px-4 py-2 rounded-xl transition-all flex items-center gap-2",
             activeTab === "ai_params"
-              ? "bg-blue-600 text-white shadow-xs"
+              ? "bg-blue-600 text-white shadow-xs font-bold"
               : "text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
           )}
         >
@@ -379,20 +581,87 @@ export const SettingsModule: React.FC = () => {
           className={cn(
             "px-4 py-2 rounded-xl transition-all flex items-center gap-2",
             activeTab === "members"
-              ? "bg-blue-600 text-white shadow-xs"
+              ? "bg-blue-600 text-white shadow-xs font-bold"
               : "text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
           )}
         >
           <Users className="w-4 h-4" />
-          <span>Membros & RBAC</span>
+          <span>Membros & Setores</span>
         </button>
       </div>
 
       {/* Content: White-label Tab */}
       {activeTab === "whitelabel" && (
         <form onSubmit={handleSaveWhitelabel} className="space-y-6">
+          {/* Live Preview Card */}
+          <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-blue-500" />
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Pré-visualização em Tempo Real da Marca
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-400 font-mono">
+                {customDomain || "app.suaempresa.com.br"}
+              </span>
+            </div>
+
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800/80 shadow-xs flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt="Logo Preview"
+                    className="w-11 h-11 rounded-xl object-cover ring-2 ring-blue-500/20 shadow-xs flex-shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold shadow-xs flex-shrink-0"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                )}
+                <div>
+                  <div className="font-bold text-sm text-slate-900 dark:text-white">
+                    {brandName || "Nome da Sua Empresa"}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                      Plano Enterprise Pro
+                    </span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                    <span className="text-[10px] text-emerald-500 font-medium">Ativo</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white shadow-xs transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  Botão com Cor Primária
+                </button>
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold text-white shadow-xs"
+                  style={{ backgroundColor: secondaryColor }}
+                  title="Cor Secundária"
+                >
+                  2ª
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
-            <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+            <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+              <Palette className="w-4 h-4 text-blue-500" />
               Personalização Visual da Empresa
             </h3>
 
@@ -401,7 +670,7 @@ export const SettingsModule: React.FC = () => {
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Paletas Rápidas Pré-definidas
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-2.5">
                 {colorPresets.map((preset) => (
                   <button
                     key={preset.name}
@@ -411,19 +680,19 @@ export const SettingsModule: React.FC = () => {
                       setSecondaryColor(preset.secondary);
                     }}
                     className={cn(
-                      "p-3 rounded-xl border text-left transition-all",
-                      primaryColor === preset.primary
-                        ? "border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/20"
-                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
+                      "p-3 rounded-xl border text-left transition-all cursor-pointer",
+                      primaryColor.toLowerCase() === preset.primary.toLowerCase()
+                        ? "border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/30 dark:bg-blue-950/30"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
                     )}
                   >
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <span
-                        className="w-3.5 h-3.5 rounded-full"
+                        className="w-3.5 h-3.5 rounded-full ring-1 ring-black/10"
                         style={{ backgroundColor: preset.primary }}
                       />
                       <span
-                        className="w-3.5 h-3.5 rounded-full"
+                        className="w-3.5 h-3.5 rounded-full ring-1 ring-black/10"
                         style={{ backgroundColor: preset.secondary }}
                       />
                     </div>
@@ -436,7 +705,7 @@ export const SettingsModule: React.FC = () => {
             </div>
 
             {/* Form Fields */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Nome da Marca / Tenant
@@ -446,33 +715,34 @@ export const SettingsModule: React.FC = () => {
                   required
                   value={brandName}
                   onChange={(e) => setBrandName(e.target.value)}
+                  placeholder="Ex: Grupo Nexus S.A."
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Domínio Customizado
+                  Domínio Customizado / Subdomínio
                 </label>
                 <input
                   type="text"
                   value={customDomain}
                   onChange={(e) => setCustomDomain(e.target.value)}
                   placeholder="app.suaempresa.com.br"
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Cor Primária (Hexadecimal)
+                  Cor Primária da Marca
                 </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
-                    className="w-10 h-9 rounded-lg border-0 cursor-pointer p-0.5"
+                    className="w-10 h-9 rounded-lg border-0 cursor-pointer p-0.5 bg-transparent"
                   />
                   <input
                     type="text"
@@ -485,24 +755,52 @@ export const SettingsModule: React.FC = () => {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  URL do Logotipo da Empresa
+                  Cor Secundária / Destaque
                 </label>
-                <input
-                  type="url"
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={secondaryColor}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                    className="w-10 h-9 rounded-lg border-0 cursor-pointer p-0.5 bg-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={secondaryColor}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                    className="flex-1 px-3.5 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                  <span>URL do Logotipo da Empresa</span>
+                  <span className="text-[11px] text-slate-400 font-normal">Aceita PNG, JPG ou SVG direto</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={logoUrl}
+                    onChange={(e) => setLogoUrl(e.target.value)}
+                    placeholder="https://suaempresa.com.br/logo.png"
+                    className="flex-1 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end">
+            <div className="pt-3 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                As alterações de logotipo e cores são aplicadas imediatamente na barra lateral e em todo o workspace.
+              </div>
               <button
                 type="submit"
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-colors"
+                disabled={isSaving}
+                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
               >
-                <Save className="w-4 h-4" />
-                <span>Salvar Configurações de White-Label</span>
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>{isSaving ? "Salvando..." : "Salvar Configurações de White-Label"}</span>
               </button>
             </div>
           </div>
@@ -511,79 +809,131 @@ export const SettingsModule: React.FC = () => {
 
       {/* Content: AI Params Tab */}
       {activeTab === "ai_params" && (
-        <div className="space-y-6">
-          <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-5">
-            <div>
-              <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                Parâmetros do Motor OpenJarvis
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Ajuste o comportamento do modelo Gemini Flash para balancear
-                precisão factual em documentos e criatividade.
-              </p>
+        <form onSubmit={handleSaveAiParams} className="space-y-6">
+          <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                  <Bot className="w-4 h-4 text-blue-500" />
+                  Parâmetros do Motor OpenJarvis
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Ajuste o comportamento do modelo Gemini Flash para balancear precisão factual em documentos e criatividade.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-semibold">
+                <Zap className="w-3.5 h-3.5" />
+                <span>Motor Gemini Flash 2.5</span>
+              </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
               {/* Temperature Slider */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Temperatura / Criatividade ({temperature})
-                  </label>
-                  <span className="text-[11px] text-slate-400">
-                    {temperature <= 0.3 ? "Modo RAG Preciso (Recomendado para Corporativo)" : "Modo Criativo"}
+              <div className="space-y-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      Temperatura / Criatividade ({temperature})
+                    </label>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Valores baixos (0.1 - 0.3) garantem respostas estritamente fiéis aos documentos corporativos e políticas da empresa.
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      "text-[11px] font-semibold px-2.5 py-1 rounded-lg border",
+                      temperature <= 0.3
+                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                        : temperature <= 0.7
+                        ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
+                        : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                    )}
+                  >
+                    {temperature <= 0.3
+                      ? "Modo RAG Preciso (Recomendado Corporativo)"
+                      : temperature <= 0.7
+                      ? "Modo Balanceado"
+                      : "Modo Altamente Criativo"}
                   </span>
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={temperature}
-                  onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                  className="w-full accent-blue-600 cursor-pointer"
-                />
+
+                <div className="space-y-1">
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={temperature}
+                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                    className="w-full accent-blue-600 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                    <span>0.0 (Factual RAG)</span>
+                    <span>0.3 (Recomendado)</span>
+                    <span>0.7 (Misto)</span>
+                    <span>1.0 (Criativo)</span>
+                  </div>
+                </div>
               </div>
 
               {/* Tokens Limit */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <div className="space-y-2 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
                   Máximo de Tokens de Saída por Resposta
                 </label>
+                <p className="text-[11px] text-slate-400">
+                  Controla o tamanho máximo das respostas geradas pelo assistente em relatórios e consultas.
+                </p>
                 <select
                   value={maxOutputTokens}
                   onChange={(e) => setMaxOutputTokens(parseInt(e.target.value))}
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none"
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value={1024}>1.024 tokens (Respostas curtas e objetivas)</option>
-                  <option value={2048}>2.048 tokens (Padrão balanceado)</option>
-                  <option value={4096}>4.096 tokens (Relatórios aprofundados e análises)</option>
+                  <option value={1024}>1.024 tokens (~750 palavras - Respostas curtas e objetivas)</option>
+                  <option value={2048}>2.048 tokens (~1.500 palavras - Padrão corporativo balanceado)</option>
+                  <option value={4096}>4.096 tokens (~3.000 palavras - Relatórios aprofundados e análises completas)</option>
+                  <option value={8192}>8.192 tokens (~6.000 palavras - Documentos extensos)</option>
                 </select>
               </div>
 
               {/* RAG Auto-search */}
-              <label className="flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 cursor-pointer">
+              <label className="flex items-start gap-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={enableRagAutoSearch}
                   onChange={(e) => setEnableRagAutoSearch(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                  className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 mt-0.5"
                 />
                 <div>
-                  <div className="text-xs font-semibold text-slate-900 dark:text-white">
+                  <div className="text-xs font-bold text-slate-900 dark:text-white">
                     Busca Semântica RAG Automática por Padrão
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    O OpenJarvis sempre buscará nos documentos do setor antes de responder ao colaborador.
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    O OpenJarvis sempre consultará os documentos corporativos do setor do usuário antes de formular respostas, garantindo embasamento nos procedimentos internos.
                   </div>
                 </div>
               </label>
             </div>
+
+            <div className="pt-3 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Os parâmetros são salvos nas preferências do tenant e aplicados a todas as requisições de IA.
+              </div>
+              <button
+                type="submit"
+                disabled={isAiSaving}
+                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+              >
+                {isAiSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>{isAiSaving ? "Salvando Parâmetros..." : "Salvar Parâmetros do Motor"}</span>
+              </button>
+            </div>
           </div>
-        </div>
+        </form>
       )}
 
-      {/* Content: Members & RBAC Tab */}
+      {/* Content: Members & Sectors Tab */}
       {activeTab === "members" && (
         <div className="space-y-6">
           {/* Status Alert Banner */}
@@ -598,86 +948,50 @@ export const SettingsModule: React.FC = () => {
                   : "bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-300"
               )}
             >
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-start gap-2.5">
                 {inviteStatus.type === "success" ? (
-                  <UserCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
                 ) : inviteStatus.type === "error" ? (
-                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
                 ) : (
-                  <Shield className="w-4 h-4 text-blue-500 shrink-0" />
+                  <Shield className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
                 )}
-                <span>{inviteStatus.message}</span>
+                <div>
+                  <p>{inviteStatus.message}</p>
+                  {inviteStatus.temporaryPassword && (
+                    <div className="mt-2.5 p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-500/30 flex items-center gap-3">
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">Senha Provisória de Acesso:</span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-white px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800">
+                        {inviteStatus.temporaryPassword}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(inviteStatus.temporaryPassword || "");
+                          setCopiedTempPass(true);
+                          setTimeout(() => setCopiedTempPass(false), 2000);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer ml-auto"
+                      >
+                        {copiedTempPass ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedTempPass ? "Copiada!" : "Copiar"}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
+
               <button
                 type="button"
                 onClick={() => setInviteStatus(null)}
-                className="opacity-70 hover:opacity-100 transition-opacity p-0.5"
-                title="Fechar alerta"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
-                <XCircle className="w-3.5 h-3.5" />
+                <XCircle className="w-4 h-4" />
               </button>
             </div>
           )}
 
-          {/* Notification Banner */}
-          {inviteStatus && (
-            <div
-              className={cn(
-                "p-4 rounded-2xl border text-xs space-y-2 animate-in fade-in duration-200",
-                inviteStatus.type === "success"
-                  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300"
-                  : inviteStatus.type === "error"
-                  ? "bg-rose-500/10 border-rose-500/20 text-rose-800 dark:text-rose-300"
-                  : "bg-blue-500/10 border-blue-500/20 text-blue-800 dark:text-blue-300"
-              )}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2 font-medium">
-                  {inviteStatus.type === "success" && <Check className="w-4 h-4 text-emerald-500 shrink-0" />}
-                  {inviteStatus.type === "error" && <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />}
-                  {inviteStatus.type === "info" && <Sparkles className="w-4 h-4 text-blue-500 shrink-0" />}
-                  <span>{inviteStatus.message}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setInviteStatus(null)}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                >
-                  <XCircle className="w-4 h-4" />
-                </button>
-              </div>
-
-              {inviteStatus.temporaryPassword && (
-                <div className="mt-2 p-3 bg-white dark:bg-slate-950 rounded-xl border border-emerald-500/30 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
-                      Senha Provisória Gerada para o Colaborador:
-                    </div>
-                    <div className="font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400 select-all tracking-wider">
-                      {inviteStatus.temporaryPassword}
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      O colaborador usará esta senha no primeiro login e será solicitado a cadastrar uma definitiva.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(inviteStatus.temporaryPassword!);
-                      setCopiedTempPass(true);
-                      setTimeout(() => setCopiedTempPass(false), 3000);
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    {copiedTempPass ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedTempPass ? "Copiada!" : "Copiar Senha"}</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 1. RESTRIÇÃO DE INTERFACE (RBAC): Invite Box Exclusiva para Master Admin e Admin */}
+          {/* 1. Invite Form Box with Dynamic Sector Creation */}
           {canManageTenant ? (
             <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
               <div className="flex items-center justify-between">
@@ -687,7 +1001,7 @@ export const SettingsModule: React.FC = () => {
                     Convidar Novo Colaborador para o Tenant
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Cadastre novos membros com opção de senha provisória automática ou personalizada. No primeiro acesso, o colaborador define a senha definitiva.
+                    Cadastre novos membros associando-os aos setores da empresa ou crie um novo setor na hora.
                   </p>
                 </div>
                 <span className="text-[10px] px-2.5 py-1 rounded-full font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center gap-1">
@@ -695,6 +1009,50 @@ export const SettingsModule: React.FC = () => {
                   Painel de Administrador
                 </span>
               </div>
+
+              {/* Create Sector Inline Modal / Panel */}
+              {isCreatingSector && (
+                <form
+                  onSubmit={handleCreateNewSector}
+                  className="p-4 rounded-xl bg-blue-50/50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/80 space-y-3 animate-in fade-in"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-bold text-blue-900 dark:text-blue-200">
+                      <FolderPlus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span>Criar Novo Setor Corporativo</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingSector(false);
+                        setNewSectorInput("");
+                      }}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      autoFocus
+                      required
+                      placeholder="Ex: Logística & Frota, Auditoria Interna, Qualidade..."
+                      value={newSectorInput}
+                      onChange={(e) => setNewSectorInput(e.target.value)}
+                      className="flex-1 px-3.5 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isSectorSaving || !newSectorInput.trim()}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      {isSectorSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      <span>Salvar & Selecionar</span>
+                    </button>
+                  </div>
+                </form>
+              )}
 
               <form onSubmit={handleInviteMember} className="space-y-3 pt-1">
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
@@ -717,20 +1075,39 @@ export const SettingsModule: React.FC = () => {
                     className="sm:col-span-4 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
                   />
 
-                  <select
-                    value={inviteSector}
-                    onChange={(e) => setInviteSector(e.target.value)}
-                    disabled={isInviting}
-                    className="sm:col-span-3 px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
-                  >
-                    <option value="Tecnologia & Inovação">Tecnologia</option>
-                    <option value="Financeiro & Controladoria">Financeiro</option>
-                    <option value="Comercial & Vendas">Comercial</option>
-                    <option value="Jurídico & Compliance">Jurídico</option>
-                    <option value="Recursos Humanos">RH</option>
-                    <option value="Marketing & Growth">Marketing</option>
-                    <option value="Operações & Suporte">Operações</option>
-                  </select>
+                  {/* Sector Selection with Option to Add New */}
+                  <div className="sm:col-span-3 flex gap-1.5">
+                    <select
+                      value={inviteSector}
+                      onChange={(e) => {
+                        if (e.target.value === "__CREATE_NEW_SECTOR__") {
+                          setIsCreatingSector(true);
+                        } else {
+                          setInviteSector(e.target.value);
+                        }
+                      }}
+                      disabled={isInviting}
+                      className="flex-1 px-3 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 truncate"
+                    >
+                      {availableSectors.map((sec) => (
+                        <option key={sec} value={sec}>
+                          {sec}
+                        </option>
+                      ))}
+                      <option value="__CREATE_NEW_SECTOR__" className="font-bold text-blue-600">
+                        + Criar Novo Setor...
+                      </option>
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingSector(!isCreatingSector)}
+                      title="Criar novo setor para a empresa"
+                      className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors flex-shrink-0 cursor-pointer"
+                    >
+                      <FolderPlus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    </button>
+                  </div>
 
                   <select
                     value={inviteRole}
@@ -768,83 +1145,110 @@ export const SettingsModule: React.FC = () => {
                         onChange={() => setAutoGenPassword(false)}
                         className="text-blue-600 focus:ring-blue-500"
                       />
-                      <span>Definir Senha Provisória Manual</span>
+                      <span>Definir Senha Inicial Manual</span>
                     </label>
                   </div>
 
                   {!autoGenPassword && (
-                    <div className="relative flex-1 max-w-xs">
-                      <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                      <input
-                        type={showInvitePass ? "text" : "password"}
-                        value={inviteCustomPassword}
-                        onChange={(e) => setInviteCustomPassword(e.target.value)}
-                        placeholder="Mínimo 6 caracteres"
-                        className="w-full pl-8 pr-8 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowInvitePass(!showInvitePass)}
-                        className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
-                      >
-                        {showInvitePass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <input
+                          type={showInvitePass ? "text" : "password"}
+                          placeholder="Mínimo 6 caracteres"
+                          value={inviteCustomPassword}
+                          onChange={(e) => setInviteCustomPassword(e.target.value)}
+                          className="px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 pr-8 text-slate-900 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowInvitePass(!showInvitePass)}
+                          className="absolute right-2 top-2 text-slate-400"
+                        >
+                          {showInvitePass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
                     </div>
                   )}
 
                   <button
                     type="submit"
-                    id="btn-submit-invite-member"
-                    disabled={isInviting}
-                    className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer shrink-0"
+                    disabled={isInviting || (!autoGenPassword && inviteCustomPassword.length < 6)}
+                    className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer self-end sm:self-auto"
                   >
-                    {isInviting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Mail className="w-3.5 h-3.5" />
-                        <span>Cadastrar e Convidar</span>
-                      </>
-                    )}
+                    {isInviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                    <span>{isInviting ? "Cadastrando..." : "Cadastrar & Enviar Acesso"}</span>
                   </button>
                 </div>
               </form>
             </div>
           ) : (
-            <div className="p-4 rounded-2xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex items-center gap-3">
-              <Lock className="w-4 h-4 text-slate-400 shrink-0" />
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                O envio de convites e o gerenciamento de papéis são restritos a usuários com permissão de <strong>Administrador</strong> ou <strong>Master Admin</strong>.
-              </p>
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs flex items-center gap-2">
+              <Lock className="w-4 h-4 flex-shrink-0" />
+              <span>Apenas administradores podem convidar e gerenciar colaboradores deste workspace.</span>
             </div>
           )}
 
-          {/* Members Table */}
-          <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+          {/* 2. Sectors Badges Manager */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-slate-500" />
-                <h4 className="font-semibold text-xs text-slate-900 dark:text-white">
-                  Colaboradores do Tenant ({members.length})
+                <Layers className="w-4 h-4 text-blue-500" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Setores Corporativos Cadastrados ({availableSectors.length})
                 </h4>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsCreatingSector(true)}
+                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Adicionar Setor</span>
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              {availableSectors.map((sector) => (
+                <div
+                  key={sector}
+                  className="px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1.5"
+                >
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  <span>{sector}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. Members List Table */}
+          <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                  Colaboradores do Workspace ({members.length})
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Gerencie permissões RBAC, setores e credenciais da equipe corporativa.
+                </p>
+              </div>
+
               {loadingMembers && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                  <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
-                  <span>Sincronizando...</span>
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                  <span>Atualizando lista...</span>
                 </div>
               )}
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 text-slate-400 font-semibold">
-                  <tr>
-                    <th className="py-3 px-4">Nome & E-mail</th>
-                    <th className="py-3 px-4">Cargo / Função (RBAC)</th>
-                    <th className="py-3 px-4">Setor</th>
-                    <th className="py-3 px-4">Data de Ingresso</th>
-                    <th className="py-3 px-4 text-right">Ações</th>
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 font-medium">
+                    <th className="pb-3 px-4">Colaborador</th>
+                    <th className="pb-3 px-4">Papel (RBAC)</th>
+                    <th className="pb-3 px-4">Setor</th>
+                    <th className="pb-3 px-4">Membro Desde</th>
+                    <th className="pb-3 px-4 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -866,7 +1270,6 @@ export const SettingsModule: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-4">
-                        {/* Apenas Admins podem alterar papéis na tabela e não podem alterar a si mesmos */}
                         {canManageTenant && m.id !== currentUser?.id ? (
                           <select
                             value={m.role}
@@ -922,7 +1325,7 @@ export const SettingsModule: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => setMemberToResetPassword(m)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors cursor-pointer"
                               title="Redefinir / Gerar Nova Senha Provisória para este Colaborador"
                             >
                               <KeyRound className="w-3.5 h-3.5" />
@@ -934,7 +1337,7 @@ export const SettingsModule: React.FC = () => {
                               type="button"
                               disabled={deletingMemberId === m.id}
                               onClick={() => handleRemoveMember(m.id, m.name)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors disabled:opacity-40"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors disabled:opacity-40 cursor-pointer"
                               title="Desativar / Revogar Acesso deste Colaborador"
                             >
                               {deletingMemberId === m.id ? (

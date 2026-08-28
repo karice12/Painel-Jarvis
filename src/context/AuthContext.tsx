@@ -35,8 +35,11 @@ const DEFAULT_FALLBACK_TENANT: TenantConfig = {
   id: "tenant_omni_01",
   name: "Workspace Corporativo",
   subdomain: "app.omnisas.io",
+  customDomain: "app.omnisas.io",
   logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=120&auto=format&fit=crop&q=80",
+  logo: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=120&auto=format&fit=crop&q=80",
   primaryColor: "#2563eb",
+  secondaryColor: "#0f172a",
   themeMode: "dark",
   monthlyRequestLimit: 10000,
   currentRequests: 0,
@@ -46,6 +49,21 @@ const DEFAULT_FALLBACK_TENANT: TenantConfig = {
   webhookUrl: "",
   plan: "Enterprise Pro",
   aiModelName: "OpenJarvis v4.2 (Gemini Flash Engine)",
+  sectors: [
+    "Diretoria & Tecnologia",
+    "Tecnologia & Inovação",
+    "Financeiro & Controladoria",
+    "Comercial & Vendas",
+    "Jurídico & Compliance",
+    "Recursos Humanos",
+    "Marketing & Growth",
+    "Operações & Suporte"
+  ],
+  aiSettings: {
+    temperature: 0.3,
+    maxOutputTokens: 2048,
+    enableRagAutoSearch: true,
+  },
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -116,7 +134,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       document.documentElement.style.setProperty("--primary", tenant.primaryColor);
       document.documentElement.style.setProperty("--primary-color", tenant.primaryColor);
     }
-  }, [tenant?.primaryColor]);
+    if (tenant?.secondaryColor) {
+      document.documentElement.style.setProperty("--secondary-color", tenant.secondaryColor);
+    }
+  }, [tenant?.primaryColor, tenant?.secondaryColor]);
 
   // Check AI Engine health periodically
   useEffect(() => {
@@ -789,21 +810,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }),
       });
 
+      let updatedTenant: TenantConfig | null = null;
+
       if (res.ok) {
         const data = await res.json();
         if (data.tenant) {
-          setTenant(data.tenant);
-        } else {
-          setTenant((prev) => (prev ? { ...prev, ...config } : null));
+          updatedTenant = data.tenant;
         }
-        return true;
       }
-      
-      setTenant((prev) => (prev ? { ...prev, ...config } : null));
+
+      if (!updatedTenant) {
+        setTenant((prev) => {
+          const merged = prev ? { ...prev, ...config } : ({ ...DEFAULT_FALLBACK_TENANT, ...config } as TenantConfig);
+          try {
+            localStorage.setItem("omni_tenant_config", JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      } else {
+        setTenant(updatedTenant);
+        try {
+          localStorage.setItem("omni_tenant_config", JSON.stringify(updatedTenant));
+        } catch {}
+      }
+
+      // Sync user tenantName if name changed
+      if (config.name) {
+        setUser((prev) => (prev ? { ...prev, tenantName: config.name! } : null));
+      }
+
       return true;
     } catch (e) {
       console.error("Tenant update error:", e);
-      setTenant((prev) => (prev ? { ...prev, ...config } : null));
+      setTenant((prev) => {
+        const merged = prev ? { ...prev, ...config } : null;
+        if (merged) {
+          try {
+            localStorage.setItem("omni_tenant_config", JSON.stringify(merged));
+          } catch {}
+        }
+        return merged;
+      });
       return false;
     }
   };
