@@ -1302,7 +1302,7 @@ ${webSearchSources.slice(0, 5).map((w, idx) => `* [${idx + 1}] **${w.title}** - 
 
 // 5.1 AI Event Scheduling via Natural Language
 app.post("/api/ai/schedule", async (req, res) => {
-  const { prompt, sector = "Geral", tenantId = "tenant_omni_01" } = req.body;
+  const { prompt, sector = "Geral", tenantId = "tenant_omni_01", userId = "usr_master_01", userName = "Colaborador", userEmail = "colaborador@nexus.com.br" } = req.body;
   if (!prompt) return res.status(400).json({ error: "Prompt obrigatório" });
 
   try {
@@ -1318,7 +1318,7 @@ app.post("/api/ai/schedule", async (req, res) => {
             parts: [
               {
                 text: `Extraia informações de agendamento em JSON do seguinte pedido em linguagem natural: "${prompt}".
-Hoje é ${today}.
+Hoje é ${today}. IMPORTANTE: A data NUNCA pode ser anterior a ${today}.
 Retorne estritamente um JSON no formato:
 {
   "title": "Título resumido e profissional do evento",
@@ -1328,7 +1328,7 @@ Retorne estritamente um JSON no formato:
   "endTime": "HH:mm",
   "category": "reuniao" | "prazo" | "ia_gerado" | "cliente" | "geral",
   "sector": "${sector}",
-  "participants": ["Nome ou equipe participante"]
+  "participants": ["${userName}"]
 }`,
               },
             ],
@@ -1341,29 +1341,36 @@ Retorne estritamente um JSON no formato:
       });
 
       const parsed = JSON.parse(response.text || "{}");
+      let eventDate = parsed.date || today;
+      if (eventDate < today) eventDate = today;
+
       const newEvent = {
         id: `evt_ai_${Date.now()}`,
         title: parsed.title || "Reunião Agendada por IA",
         description: parsed.description || prompt,
-        date: parsed.date || today,
+        date: eventDate,
         startTime: parsed.startTime || "14:00",
         endTime: parsed.endTime || "15:00",
         category: (parsed.category as any) || "ia_gerado",
         sector: parsed.sector || sector,
-        participants: parsed.participants || ["Equipe"],
+        participants: parsed.participants || [userName],
         meetUrl: `https://meet.google.com/ai-${Date.now().toString().slice(-4)}`,
         isAiGenerated: true,
+        userId,
+        userEmail,
+        createdBy: userId,
+        tenantId,
       };
 
       DB.events.push(newEvent);
 
       recordAuditLog(
-        "usr_ai_agent",
-        "OpenJarvis Scheduler",
-        "ai@nexus.com.br",
+        userId,
+        userName,
+        userEmail,
         "user",
         "AI_SCHEDULE_EVENT_CREATED",
-        `Evento criado via IA a partir do prompt: "${prompt.slice(0, 60)}..."`,
+        `Evento criado via IA para a agenda pessoal: "${newEvent.title}" em ${newEvent.date} às ${newEvent.startTime}`,
         tenantId,
         "success"
       );
@@ -1380,9 +1387,13 @@ Retorne estritamente um JSON no formato:
         endTime: "15:00",
         category: "ia_gerado" as const,
         sector: sector || "Geral",
-        participants: ["Equipe"],
+        participants: [userName],
         meetUrl: `https://meet.google.com/ai-${Date.now().toString().slice(-4)}`,
         isAiGenerated: true,
+        userId,
+        userEmail,
+        createdBy: userId,
+        tenantId,
       };
 
       DB.events.push(newEvent);
@@ -1474,57 +1485,244 @@ app.delete("/api/documents/:id", (req, res) => {
   }
 });
 
-// 9. Calendar Events CRUD
+// 9. Calendar Events CRUD (com Isolamento por Usuário, Bloqueio de Datas/Horários Passados e Edição)
 app.get(["/api/events", "/api/agenda/events"], (req, res) => {
-  res.json({ events: DB.events });
+  const userId = (req.query.userId as string) || (req.headers["x-user-id"] as string);
+  const userEmail = (req.query.userEmail as string) || (req.headers["x-user-email"] as string);
+  const tenantId = (req.query.tenantId as string) || "tenant_omni_01";
+
+  // Filter events belonging to tenant
+  let list = DB.events.filter((e) => !e.tenantId || e.tenantId === tenantId);
+
+  // Isolamento estrito por usuário: cada usuário só tem acesso a sua própria agenda (eventos criados por ele ou onde ele participa)
+  if (userId || userEmail) {
+    const cleanEmail = (userEmail || "").trim().toLowerCase();
+    const cleanId = (userId || "").trim();
+
+    list = list.filter((e) => {
+      const isOwner = (cleanId && (e.userId === cleanId || e.createdBy === cleanId)) ||
+                      (cleanEmail && e.userEmail && e.userEmail.toLowerCase() === cleanEmail);
+      const isParticipant = Array.isArray(e.participants) && e.participants.some((p: string) => {
+        const pLower = p.toLowerCase();
+        return (cleanEmail && pLower.includes(cleanEmail)) || (cleanId && pLower.includes(cleanId));
+      });
+      return isOwner || isParticipant;
+    });
+  }
+
+  res.json({ events: list });
 });
 
 app.post(["/api/events", "/api/agenda/events"], (req, res) => {
-  const { title, description, date, startDate, startTime, endTime, category, type, sector, participants, meetUrl, isAiGenerated } = req.body;
-  
+  const {
+    title,
+    description,
+    date,
+    startDate,
+    startTime,
+    endTime,
+    category,
+    type,
+    sector,
+    participants,
+    meetUrl,
+    isAiGenerated,
+    userId,
+    userName,
+    userEmail,
+    tenantId = "tenant_omni_01",
+  } = req.body;
+
   let formattedDate = date;
   if (!formattedDate && startDate) {
     formattedDate = startDate.includes("T") ? startDate.split("T")[0] : startDate;
   }
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // 1. Bloqueio estrito de datas passadas
+  if (formattedDate && formattedDate < todayStr) {
+    return res.status(400).json({
+      error: `Data inválida! Não é permitido agendar eventos em datas retroativas (${formattedDate}). A data mínima permitida é hoje (${todayStr}).`,
+    });
+  }
+
+  const resolvedDate = formattedDate || todayStr;
+  const resolvedStartTime = startTime || "09:00";
+  const resolvedEndTime = endTime || "10:00";
+
+  // 2. Bloqueio estrito de horários passados para a data de hoje
+  if (resolvedDate === todayStr) {
+    const now = new Date();
+    const currentHours = String(now.getHours()).padStart(2, "0");
+    const currentMinutes = String(now.getMinutes()).padStart(2, "0");
+    const currentTimeStr = `${currentHours}:${currentMinutes}`;
+
+    if (resolvedStartTime < currentTimeStr) {
+      return res.status(400).json({
+        error: `Horário indisponível! O horário ${resolvedStartTime} já passou hoje (horário atual: ${currentTimeStr}). Selecione um horário futuro.`,
+      });
+    }
+  }
+
+  const effectiveUserId = userId || "usr_current";
+  const effectiveUserName = userName || "Colaborador";
+  const effectiveUserEmail = userEmail || "colaborador@nexus.com.br";
 
   const newEvent = {
-    id: `evt_${Date.now()}`,
+    id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
     title: title || "Novo Compromisso",
     description: description || "",
-    date: formattedDate || new Date().toISOString().split("T")[0],
-    startTime: startTime || "09:00",
-    endTime: endTime || "10:00",
+    date: resolvedDate,
+    startTime: resolvedStartTime,
+    endTime: resolvedEndTime,
     category: category || type || "geral",
     type: type || category || "geral",
     sector: sector || "Geral",
-    participants: participants || ["Equipe"],
+    participants: participants || [effectiveUserName],
     meetUrl: meetUrl || (category === "reuniao" ? `https://meet.google.com/omni-${Date.now().toString().slice(-4)}` : undefined),
     isAiGenerated: !!isAiGenerated,
+    userId: effectiveUserId,
+    userEmail: effectiveUserEmail,
+    createdBy: effectiveUserId,
+    tenantId,
+    createdAt: new Date().toISOString(),
   };
+
   DB.events.push(newEvent);
 
   recordAuditLog(
-    "usr_user_01",
-    "Usuário",
-    "user@nexus.com.br",
+    effectiveUserId,
+    effectiveUserName,
+    effectiveUserEmail,
     "user",
     "CALENDAR_EVENT_CREATED",
-    `Evento criado: ${newEvent.title} em ${newEvent.date} às ${newEvent.startTime}`,
-    "tenant_omni_01",
-    "success"
+    `Novo compromisso criado na agenda pessoal: "${newEvent.title}" para ${newEvent.date} das ${newEvent.startTime} às ${newEvent.endTime}`,
+    tenantId,
+    "success",
+    req.ip || "189.40.122.15"
   );
 
   res.json({ success: true, event: newEvent });
 });
 
+// Editar Compromisso Existente
+app.put(["/api/events/:id", "/api/agenda/events/:id"], (req, res) => {
+  const { id } = req.params;
+  const {
+    title,
+    description,
+    date,
+    startTime,
+    endTime,
+    category,
+    sector,
+    participants,
+    meetUrl,
+    userId,
+    userName,
+    userEmail,
+    tenantId = "tenant_omni_01",
+  } = req.body;
+
+  const eventIndex = DB.events.findIndex((e) => e.id === id);
+  if (eventIndex === -1) {
+    return res.status(404).json({ error: "Compromisso não encontrado na agenda." });
+  }
+
+  const existingEvent = DB.events[eventIndex];
+  const todayStr = new Date().toISOString().split("T")[0];
+  const targetDate = date || existingEvent.date;
+  const targetStartTime = startTime || existingEvent.startTime;
+
+  // 1. Validação de data não retroativa
+  if (targetDate < todayStr) {
+    return res.status(400).json({
+      error: `Data inválida! Não é possível remarcar para uma data passada (${targetDate}).`,
+    });
+  }
+
+  // 2. Validação de horário não retroativo caso seja hoje
+  if (targetDate === todayStr && targetStartTime) {
+    const now = new Date();
+    const currentHours = String(now.getHours()).padStart(2, "0");
+    const currentMinutes = String(now.getMinutes()).padStart(2, "0");
+    const currentTimeStr = `${currentHours}:${currentMinutes}`;
+
+    if (targetStartTime < currentTimeStr) {
+      return res.status(400).json({
+        error: `Horário indisponível! O horário ${targetStartTime} já passou hoje (horário atual: ${currentTimeStr}).`,
+      });
+    }
+  }
+
+  // Atualiza campos
+  const updatedEvent = {
+    ...existingEvent,
+    title: title !== undefined ? title : existingEvent.title,
+    description: description !== undefined ? description : existingEvent.description,
+    date: targetDate,
+    startTime: targetStartTime,
+    endTime: endTime || existingEvent.endTime,
+    category: category || existingEvent.category,
+    sector: sector || existingEvent.sector,
+    participants: participants || existingEvent.participants,
+    meetUrl: meetUrl !== undefined ? meetUrl : existingEvent.meetUrl,
+    updatedAt: new Date().toISOString(),
+  };
+
+  DB.events[eventIndex] = updatedEvent;
+
+  recordAuditLog(
+    userId || existingEvent.userId || "usr_current",
+    userName || "Colaborador",
+    userEmail || existingEvent.userEmail || "colaborador@nexus.com.br",
+    "user",
+    "CALENDAR_EVENT_UPDATED",
+    `Compromisso atualizado na agenda: "${updatedEvent.title}" para ${updatedEvent.date} (${updatedEvent.startTime} - ${updatedEvent.endTime})`,
+    tenantId,
+    "success",
+    req.ip || "189.40.122.15"
+  );
+
+  res.json({ success: true, event: updatedEvent });
+});
+
+app.patch(["/api/events/:id", "/api/agenda/events/:id"], (req, res) => {
+  const { id } = req.params;
+  const eventIndex = DB.events.findIndex((e) => e.id === id);
+  if (eventIndex === -1) {
+    return res.status(404).json({ error: "Compromisso não encontrado." });
+  }
+  const existingEvent = DB.events[eventIndex];
+  const updatedEvent = { ...existingEvent, ...req.body, updatedAt: new Date().toISOString() };
+  DB.events[eventIndex] = updatedEvent;
+  res.json({ success: true, event: updatedEvent });
+});
+
+// Excluir Compromisso da Agenda
 app.delete(["/api/events/:id", "/api/agenda/events/:id"], (req, res) => {
   const { id } = req.params;
+  const { userId, userName, userEmail, tenantId = "tenant_omni_01" } = req.query;
+
   const idx = DB.events.findIndex((e) => e.id === id);
   if (idx !== -1) {
     const deleted = DB.events.splice(idx, 1)[0];
+
+    recordAuditLog(
+      (userId as string) || deleted.userId || "usr_current",
+      (userName as string) || "Colaborador",
+      (userEmail as string) || deleted.userEmail || "colaborador@nexus.com.br",
+      "user",
+      "CALENDAR_EVENT_DELETED",
+      `Compromisso removido da agenda: "${deleted.title}" (Data: ${deleted.date} às ${deleted.startTime})`,
+      (tenantId as string) || "tenant_omni_01",
+      "success",
+      req.ip || "189.40.122.15"
+    );
+
     return res.json({ success: true, deleted });
   }
-  return res.status(404).json({ error: "Evento não encontrado" });
+  return res.status(404).json({ error: "Compromisso não encontrado para exclusão." });
 });
 
 // 10. Audit Logs (Master Admin & System Compliance)

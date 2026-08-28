@@ -173,6 +173,11 @@ export interface CalendarEvent {
   participants: string[];
   meetUrl?: string;
   isAiGenerated?: boolean;
+  userId?: string;
+  userEmail?: string;
+  createdBy?: string;
+  tenantId?: string;
+  updatedAt?: string;
 }
 
 export interface AuditLog {

@@ -261,34 +261,61 @@ export async function saveAiChatMessageToDb(payload: {
 }
 
 /**
- * Agenda Events: Fetch from Supabase
+ * Agenda Events: Fetch from Supabase with User-Level Isolation
  */
-export async function getAgendaEventsFromDb(tenantId: string): Promise<CalendarEvent[]> {
+export async function getAgendaEventsFromDb(
+  tenantId: string,
+  userId?: string,
+  userEmail?: string
+): Promise<CalendarEvent[]> {
   if (!isSupabaseConfigured) return [];
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from("agenda_events")
       .select("*")
       .eq("tenant_id", tenantId)
       .order("date", { ascending: true })
       .order("start_time", { ascending: true });
 
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query;
+
     if (error || !data) return [];
 
-    return data.map((evt: any) => ({
-      id: evt.id,
-      title: evt.title,
-      description: evt.description || "",
-      date: evt.date,
-      startTime: evt.start_time || "10:00",
-      endTime: evt.end_time || "11:00",
-      category: evt.category || "geral",
-      sector: evt.sector || "Geral",
-      participants: Array.isArray(evt.participants) ? evt.participants : [evt.participants || "Equipe"],
-      meetUrl: evt.meet_url || undefined,
-      isAiGenerated: Boolean(evt.is_ai_generated),
-    }));
+    return data
+      .filter((evt: any) => {
+        // Enforce user isolation if user_id or userEmail provided
+        if (userId && evt.user_id && evt.user_id !== userId) {
+          const participants = Array.isArray(evt.participants) ? evt.participants : [evt.participants || ""];
+          const isParticipant = participants.some((p: string) =>
+            (userEmail && p.toLowerCase().includes(userEmail.toLowerCase())) ||
+            (userId && p.toLowerCase().includes(userId.toLowerCase()))
+          );
+          if (!isParticipant) return false;
+        }
+        return true;
+      })
+      .map((evt: any) => ({
+        id: evt.id,
+        title: evt.title,
+        description: evt.description || "",
+        date: evt.date,
+        startTime: evt.start_time || "10:00",
+        endTime: evt.end_time || "11:00",
+        category: evt.category || "geral",
+        sector: evt.sector || "Geral",
+        participants: Array.isArray(evt.participants) ? evt.participants : [evt.participants || "Equipe"],
+        meetUrl: evt.meet_url || undefined,
+        isAiGenerated: Boolean(evt.is_ai_generated),
+        userId: evt.user_id || userId,
+        userEmail: evt.user_email || userEmail,
+        createdBy: evt.created_by || evt.user_id || userId,
+        tenantId: evt.tenant_id || tenantId,
+      }));
   } catch (err) {
     console.warn("Could not load agenda events from Supabase:", err);
     return [];
@@ -301,7 +328,8 @@ export async function getAgendaEventsFromDb(tenantId: string): Promise<CalendarE
 export async function saveAgendaEventToDb(
   event: CalendarEvent,
   tenantId: string,
-  userId?: string
+  userId?: string,
+  userEmail?: string
 ): Promise<boolean> {
   if (!isSupabaseConfigured) return false;
 
@@ -309,7 +337,9 @@ export async function saveAgendaEventToDb(
     const { error } = await supabase.from("agenda_events").insert({
       id: event.id,
       tenant_id: tenantId,
-      user_id: userId,
+      user_id: userId || event.userId,
+      user_email: userEmail || event.userEmail,
+      created_by: userId || event.userId,
       title: event.title,
       description: event.description,
       date: event.date,
@@ -326,6 +356,63 @@ export async function saveAgendaEventToDb(
     return !error;
   } catch (err) {
     console.warn("Could not insert event into Supabase:", err);
+    return false;
+  }
+}
+
+/**
+ * Agenda Events: Update existing event in Supabase
+ */
+export async function updateAgendaEventInDb(
+  event: CalendarEvent,
+  tenantId: string,
+  userId?: string
+): Promise<boolean> {
+  if (!isSupabaseConfigured) return false;
+
+  try {
+    const { error } = await supabase
+      .from("agenda_events")
+      .update({
+        title: event.title,
+        description: event.description,
+        date: event.date,
+        start_time: event.startTime,
+        end_time: event.endTime,
+        category: event.category,
+        sector: event.sector,
+        participants: event.participants,
+        meet_url: event.meetUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", event.id);
+
+    return !error;
+  } catch (err) {
+    console.warn("Could not update event in Supabase:", err);
+    return false;
+  }
+}
+
+/**
+ * Agenda Events: Delete event from Supabase
+ */
+export async function deleteAgendaEventFromDb(
+  eventId: string,
+  tenantId?: string,
+  userId?: string
+): Promise<boolean> {
+  if (!isSupabaseConfigured) return false;
+
+  try {
+    const { error } = await supabase
+      .from("agenda_events")
+      .delete()
+      .eq("id", eventId);
+
+    return !error;
+  } catch (err) {
+    console.warn("Could not delete event from Supabase:", err);
     return false;
   }
 }
