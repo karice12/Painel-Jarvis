@@ -26,6 +26,7 @@ export interface SendChatMessageParams {
   userEmail?: string;
   tenantId?: string;
   token?: string;
+  systemInstruction?: string;
   onWebSearchQuotaExceeded?: (quotaInfo: WebSearchQuotaInfo) => void;
 }
 
@@ -41,10 +42,19 @@ export interface ChatServiceResponse {
     date: string;
     startTime: string;
     endTime: string;
+    category?: string;
+    sector?: string;
+    participants?: string[];
     description: string;
   } | null;
+  dispatchedNotification?: {
+    recipientName: string;
+    recipientEmail: string;
+    message: string;
+    channelName?: string;
+  } | null;
   tokensUsed?: number;
-  engineUsed?: 'ollama_local' | 'projarvis_web' | 'gemini_flash';
+  engineUsed?: 'ollama_local' | 'projarvis_web' | 'gemini_flash' | string;
   timestamp?: string;
 }
 
@@ -170,6 +180,7 @@ export async function sendChatMessage(params: SendChatMessageParams): Promise<Ch
     userEmail = "usuario@nexus.com.br",
     tenantId = "tenant_omni_01",
     token,
+    systemInstruction,
     onWebSearchQuotaExceeded,
   } = params;
 
@@ -210,6 +221,7 @@ export async function sendChatMessage(params: SendChatMessageParams): Promise<Ch
       tenantId,
       userId,
       userEmail,
+      systemInstruction,
     }),
   });
 
@@ -223,6 +235,7 @@ export async function sendChatMessage(params: SendChatMessageParams): Promise<Ch
       webSearchSources: data.webSearchSources || [],
       webSearchQuotaExceeded: webSearchExceeded || Boolean(data.webSearchQuotaExceeded),
       suggestedEvent: data.suggestedEvent || null,
+      dispatchedNotification: data.dispatchedNotification || null,
       tokensUsed: data.tokensUsed || 120,
       engineUsed: data.engineUsed || "ollama_local",
       timestamp: data.timestamp || new Date().toISOString(),

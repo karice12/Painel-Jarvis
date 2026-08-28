@@ -95,7 +95,16 @@ export interface OpenJarvisMessage {
     date: string;
     startTime: string;
     endTime: string;
+    category?: string;
+    sector?: string;
+    participants?: string[];
     description: string;
+  };
+  dispatchedNotification?: {
+    recipientName: string;
+    recipientEmail: string;
+    message: string;
+    channelName?: string;
   };
 }
 

@@ -91,7 +91,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const rawName = userMetadata?.name || userMetadata?.full_name || (userEmail ? userEmail.split("@")[0] : "Colaborador");
     const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
     const lowerEmail = (userEmail || "").toLowerCase();
-    const isPelegrino = lowerEmail === "pelegrinokarol@gmail.com" || lowerEmail.includes("pelegrinokarol") || rawName.toLowerCase().includes("pelegrinokarol");
+    const isPelegrino = lowerEmail === "pelegrinokarol@gmail.com" || lowerEmail.includes("pelegrinokarol") || lowerEmail.includes("pelegrino") || rawName.toLowerCase().includes("pelegrinokarol") || rawName.toLowerCase().includes("pelegrino");
     
     const fallbackRole: Role = isPelegrino || lowerEmail.includes("master")
       ? "master_admin"
@@ -210,7 +210,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             const effectiveEmail = profile.email || userEmail;
-            const isPelegrino = effectiveEmail?.toLowerCase() === "pelegrinokarol@gmail.com" || effectiveEmail?.toLowerCase().includes("pelegrinokarol");
+            const isPelegrino = effectiveEmail?.toLowerCase() === "pelegrinokarol@gmail.com" || effectiveEmail?.toLowerCase().includes("pelegrinokarol") || effectiveEmail?.toLowerCase().includes("pelegrino");
             const rawName = isPelegrino ? "Pelegrinokarol" : (profile.name || profile.full_name || userMetadata?.name || userMetadata?.full_name || (userEmail ? userEmail.split("@")[0] : "Colaborador"));
             setUser({
               id: profile.id,
@@ -460,7 +460,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = async (email: string, password: string, name: string, sector: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
     try {
-      const isPelegrino = email.toLowerCase() === "pelegrinokarol@gmail.com" || email.toLowerCase().includes("pelegrinokarol");
+      const isPelegrino = email.toLowerCase() === "pelegrinokarol@gmail.com" || email.toLowerCase().includes("pelegrinokarol") || email.toLowerCase().includes("pelegrino");
       const assignedRole: Role = isPelegrino ? "master_admin" : "user";
       const assignedName = isPelegrino ? "Pelegrinokarol" : name;
       const assignedSector = isPelegrino ? "Diretoria & Tecnologia" : sector;

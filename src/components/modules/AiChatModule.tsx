@@ -36,6 +36,7 @@ import { cn, sanitizeInput } from "../../lib/utils";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getWebSearchQuota, sendChatMessage, getAiUsageStatus } from "../../services/api";
 import { getAiChatHistoryFromDb, saveAiChatMessageToDb } from "../../services/supabaseDb";
+import { OPENJARVIS_SYSTEM_INSTRUCTION } from "../../constants/aiInstructions";
 
 interface AiChatModuleProps {
   onAddEventToAgenda?: (event: any) => void;
@@ -340,6 +341,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         userId: user?.id || "usr_master_01",
         userEmail: user?.email || "usuario@nexus.com.br",
         token: token || undefined,
+        systemInstruction: OPENJARVIS_SYSTEM_INSTRUCTION,
         onWebSearchQuotaExceeded: (qInfo) => {
           setWebSearchAlert(
             `⚠️ Cota individual de Pesquisa Web atingida (${qInfo.webSearchUsed}/${qInfo.webSearchLimit} buscas diárias). A resposta foi gerada utilizando a Base de Conhecimento interna.`
@@ -396,6 +398,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
           webSearchUsed: data.webSearchUsed,
           webSearchSources: data.webSearchSources,
           suggestedEvent: data.suggestedEvent,
+          dispatchedNotification: data.dispatchedNotification,
           tokensUsed: data.tokensUsed,
         },
       ]);
@@ -715,14 +718,36 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left">
               <button
                 type="button"
-                onClick={() => setInputPrompt("Como estão estruturadas as diretrizes corporativas?")}
+                onClick={() => setInputPrompt("Como está a saúde da empresa, projetos, agenda executiva e auditorias?")}
+                className="p-3 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/40 hover:bg-blue-100/60 dark:hover:bg-blue-900/60 transition-colors text-xs text-slate-700 dark:text-slate-200 group cursor-pointer shadow-2xs"
+              >
+                <div className="font-medium text-blue-900 dark:text-blue-200 group-hover:text-blue-600 flex items-center gap-1.5">
+                  <ShieldAlert className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  Saúde Corporativa & Auditorias
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Diagnóstico executivo de infra, projetos e conformidade</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputPrompt("Avise a Pelegrino Karol que hoje temos uma reunião marcada às 14:00 sobre ampliação e criação de novos projetos e inclua na agenda")}
+                className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/40 hover:bg-emerald-100/60 dark:hover:bg-emerald-900/60 transition-colors text-xs text-slate-700 dark:text-slate-200 group cursor-pointer shadow-2xs"
+              >
+                <div className="font-medium text-emerald-900 dark:text-emerald-200 group-hover:text-emerald-600 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  Agendar & Notificar Pelegrino Karol
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Marcar reunião às 14:00 e disparar mensagem automática</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputPrompt("Como estão estruturadas as diretrizes corporativas e normas de conformidade?")}
                 className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs text-slate-700 dark:text-slate-200 group cursor-pointer shadow-2xs"
               >
                 <div className="font-medium text-slate-900 dark:text-white group-hover:text-blue-500 flex items-center gap-1.5">
                   <BookOpen className="w-3.5 h-3.5 text-blue-500" />
-                  Base de Conhecimento
+                  Base de Conhecimento RAG
                 </div>
-                <div className="text-[11px] text-slate-400 mt-1">Consultar documentos indexados via RAG</div>
+                <div className="text-[11px] text-slate-400 mt-1">Consultar documentos e políticas indexadas</div>
               </button>
               <button
                 type="button"
@@ -969,6 +994,35 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                       <Calendar className="w-3.5 h-3.5" />
                       <span>Confirmar & Adicionar à Agenda Corporativa</span>
                     </button>
+                  </div>
+                )}
+
+                {/* AI Dispatched Internal Notification Card */}
+                {msg.dispatchedNotification && (
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-300 dark:border-blue-700/60 text-xs space-y-2">
+                    <div className="flex items-center justify-between font-bold text-blue-800 dark:text-blue-300">
+                      <span className="flex items-center gap-1.5">
+                        <Send className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        Notificação Interna Disparada Automaticamente
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200">
+                        Chat Corporativo
+                      </span>
+                    </div>
+
+                    <div className="bg-white/80 dark:bg-slate-900/80 p-2.5 rounded-xl border border-blue-200 dark:border-blue-800/50">
+                      <div className="flex items-center justify-between text-[11px] font-semibold text-slate-800 dark:text-slate-200">
+                        <span>👤 Destinatário: {msg.dispatchedNotification.recipientName}</span>
+                        <span className="text-[10px] text-slate-400">Canal: #{msg.dispatchedNotification.channelName || "geral"}</span>
+                      </div>
+                      <p className="text-slate-600 dark:text-slate-300 text-[11px] mt-1 italic">
+                        "{msg.dispatchedNotification.message}"
+                      </p>
+                      <div className="flex items-center gap-1.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium mt-1.5">
+                        <Check className="w-3 h-3" />
+                        <span>Entregue no sistema de mensagens corporativas</span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
