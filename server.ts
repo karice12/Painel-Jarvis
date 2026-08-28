@@ -43,6 +43,7 @@ interface DBStructure {
   events: any[];
   chatMessages: any[];
   chatChannels?: any[];
+  aiChatHistory: any[];
 }
 
 // In-Memory Database Store for Multi-Tenant Data & State (starts clean without fictitious entries)
@@ -87,6 +88,7 @@ const DB: DBStructure = {
   auditLogs: [],
   events: [],
   chatMessages: [],
+  aiChatHistory: [],
   chatChannels: [
     {
       id: "chan_geral",
@@ -1146,17 +1148,68 @@ ${webSearchSources.slice(0, 5).map((w, idx) => `* [${idx + 1}] **${w.title}** - 
     tokensUsed = Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + 80;
   }
 
-  // Check for event_json block in responseText
+  // Check for event_json or json block in responseText
   if (!suggestedEvent) {
-    const eventMatch = responseText.match(/```event_json\s*([\s\S]*?)\s*```/);
+    const eventMatch = responseText.match(/```(?:event_json|json)\s*([\s\S]*?)\s*```/);
     if (eventMatch && eventMatch[1]) {
       try {
-        suggestedEvent = JSON.parse(eventMatch[1].trim());
-        responseText = responseText.replace(/```event_json[\s\S]*?```/, "").trim();
+        const parsed = JSON.parse(eventMatch[1].trim());
+        if (parsed.title || parsed.date || parsed.startTime) {
+          suggestedEvent = parsed;
+          responseText = responseText.replace(/```(?:event_json|json)[\s\S]*?```/, "").trim();
+        }
       } catch {
         // ignore json parse error
       }
     }
+  }
+
+  // Fallback meeting extraction if user explicitly asked for meeting and none was extracted
+  const lowerMsg = message.toLowerCase();
+  const isMeetingIntent =
+    lowerMsg.includes("reunião") ||
+    lowerMsg.includes("reuniao") ||
+    lowerMsg.includes("agendar") ||
+    lowerMsg.includes("marcar") ||
+    lowerMsg.includes("agenda") ||
+    lowerMsg.includes("compromisso");
+
+  if (!suggestedEvent && isMeetingIntent) {
+    let meetingTitle = "Reunião Corporativa";
+    if (lowerMsg.includes("projeto") || lowerMsg.includes("ampliação") || lowerMsg.includes("ampliacao")) {
+      meetingTitle = "Reunião: Ampliação e Novos Projetos";
+    } else if (lowerMsg.includes("orçamento") || lowerMsg.includes("orcamento") || lowerMsg.includes("financeiro")) {
+      meetingTitle = "Reunião: Alinhamento Orçamentário";
+    } else {
+      meetingTitle = `Reunião: ${message.slice(0, 35).replace(/^[^\w]+|[^\w]+$/g, "")}`;
+    }
+
+    let detectedTime = "14:00";
+    const timeMatch = message.match(/(\d{1,2})[h:](\d{2})?/i);
+    if (timeMatch) {
+      const h = String(parseInt(timeMatch[1], 10)).padStart(2, "0");
+      const m = timeMatch[2] ? String(parseInt(timeMatch[2], 10)).padStart(2, "0") : "00";
+      detectedTime = `${h}:${m}`;
+    }
+
+    const endH = String(Math.min(23, parseInt(detectedTime.split(":")[0], 10) + 1)).padStart(2, "0");
+    const endTime = `${endH}:${detectedTime.split(":")[1] || "00"}`;
+
+    const parts = [userName];
+    if (lowerMsg.includes("pelegrino") || lowerMsg.includes("karol")) {
+      parts.push("Pelegrino Karol");
+    }
+
+    suggestedEvent = {
+      title: meetingTitle,
+      date: todayIso,
+      startTime: detectedTime,
+      endTime,
+      category: "reuniao",
+      sector: userSector || "Geral",
+      participants: parts,
+      description: `Reunião corporativa agendada via OpenJarvis a pedido de ${userName}`,
+    };
   }
 
   // Check for chat_notify_json block in responseText
@@ -1172,35 +1225,49 @@ ${webSearchSources.slice(0, 5).map((w, idx) => `* [${idx + 1}] **${w.title}** - 
     }
   }
 
-  // Autonomous Execution: If suggestedEvent exists, persist to DB.events if not already there
+  const effectiveUserId = req.body.userId || "usr_master_01";
+  const effectiveUserEmail = req.body.userEmail || "colaborador@nexus.com.br";
+
+  // Autonomous Execution: If suggestedEvent exists, persist to DB.events with full user context
   if (suggestedEvent && suggestedEvent.title) {
+    let evtDate = suggestedEvent.date || todayIso;
+    if (evtDate < todayIso) evtDate = todayIso;
+
     const eventExists = DB.events.some(
-      (e) => e.title === suggestedEvent.title && e.date === suggestedEvent.date && e.startTime === suggestedEvent.startTime
+      (e) => e.title === suggestedEvent.title && e.date === evtDate && e.startTime === suggestedEvent.startTime && (e.userId === effectiveUserId || e.userEmail === effectiveUserEmail)
     );
     if (!eventExists) {
+      const participantsList = Array.isArray(suggestedEvent.participants)
+        ? Array.from(new Set([userName, effectiveUserEmail, ...suggestedEvent.participants]))
+        : [userName, effectiveUserEmail, "Pelegrino Karol"];
+
       const newEvent = {
         id: `evt_ai_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
         title: suggestedEvent.title,
-        date: suggestedEvent.date || todayIso,
+        date: evtDate,
         startTime: suggestedEvent.startTime || "14:00",
         endTime: suggestedEvent.endTime || "15:00",
         category: (suggestedEvent.category as any) || "reuniao",
         sector: suggestedEvent.sector || userSector || "Geral",
-        participants: Array.isArray(suggestedEvent.participants) ? suggestedEvent.participants : ["Pelegrino Karol", userName],
+        participants: participantsList,
         description: suggestedEvent.description || `Compromisso agendado automaticamente pelo OpenJarvis para ${userName}`,
         meetUrl: `https://meet.google.com/ai-${Math.random().toString(36).substr(2, 3)}-${Math.random().toString(36).substr(2, 4)}`,
         isAiGenerated: true,
+        userId: effectiveUserId,
+        userEmail: effectiveUserEmail,
+        createdBy: effectiveUserId,
         tenantId,
+        createdAt: new Date().toISOString(),
       };
       DB.events.push(newEvent);
 
       recordAuditLog(
-        req.body.userId || "usr_ai_agent",
-        "OpenJarvis AI",
-        "jarvis@workspace.ai",
-        "master_admin",
+        effectiveUserId,
+        userName,
+        effectiveUserEmail,
+        userRole,
         "AI_SCHEDULE_EVENT_CREATED",
-        `Evento criado na agenda: "${newEvent.title}" para ${newEvent.date} às ${newEvent.startTime} (Participantes: ${newEvent.participants.join(", ")})`,
+        `Evento criado na agenda corporativa: "${newEvent.title}" para ${newEvent.date} às ${newEvent.startTime} (Participantes: ${newEvent.participants.join(", ")})`,
         tenantId,
         "success",
         req.ip || "127.0.0.1"
@@ -1260,6 +1327,44 @@ ${webSearchSources.slice(0, 5).map((w, idx) => `* [${idx + 1}] **${w.title}** - 
     );
   }
 
+  // Persist conversation history to DB.aiChatHistory
+  const userMsgId = `usr_${Date.now()}`;
+  DB.aiChatHistory.push({
+    id: userMsgId,
+    sender: "user",
+    text: message,
+    tenantId,
+    userId: effectiveUserId,
+    userName,
+    userSector,
+    webSearchUsed,
+    timestamp: new Date().toISOString(),
+  });
+
+  const aiMsgId = `ai_${Date.now()}`;
+  DB.aiChatHistory.push({
+    id: aiMsgId,
+    sender: "assistant",
+    text: responseText,
+    tenantId,
+    userId: effectiveUserId,
+    userName: "OpenJarvis AI",
+    userSector,
+    ragConsulted: useKnowledgeBase && ragSources.length > 0,
+    ragSources: useKnowledgeBase ? ragSources : [],
+    webSearchUsed,
+    webSearchSources: webSearchSources || [],
+    tokensUsed,
+    suggestedEvent,
+    dispatchedNotification,
+    timestamp: new Date().toISOString(),
+  });
+
+  // Limit in-memory history to 500 records
+  if (DB.aiChatHistory.length > 500) {
+    DB.aiChatHistory = DB.aiChatHistory.slice(-500);
+  }
+
   // Increment tenant request counter
   const currentTenant = DB.tenants.find((t) => t.id === tenantId);
   if (currentTenant) {
@@ -1267,9 +1372,9 @@ ${webSearchSources.slice(0, 5).map((w, idx) => `* [${idx + 1}] **${w.title}** - 
   }
 
   recordAuditLog(
-    req.body.userId || "usr_user_01",
+    effectiveUserId,
     userName,
-    req.body.userEmail || "user@nexus.com.br",
+    effectiveUserEmail,
     userRole,
     "AI_QUERY_OPENJARVIS",
     `Consulta com OpenJarvis (${engineUsed}) (RAG: ${useKnowledgeBase ? "Ativo" : "Inativo"}, WebSearch: ${webSearchUsed ? "Ativo" : "Inativo"})`,
@@ -1298,6 +1403,75 @@ ${webSearchSources.slice(0, 5).map((w, idx) => `* [${idx + 1}] **${w.title}** - 
     tokensUsed,
     timestamp: new Date().toISOString(),
   });
+});
+
+// 5.0 AI Chat History Endpoints
+app.get("/api/ai/history", (req, res) => {
+  const { tenantId, userId } = req.query;
+  let list = DB.aiChatHistory || [];
+  if (tenantId) {
+    list = list.filter((m) => !m.tenantId || m.tenantId === tenantId);
+  }
+  if (userId) {
+    list = list.filter((m) => !m.userId || m.userId === userId);
+  }
+  const formatted = list.map((item) => ({
+    id: item.id,
+    sender: item.sender,
+    text: item.text,
+    timestamp: item.timestamp
+      ? new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    ragConsulted: Boolean(item.ragConsulted),
+    ragSources: item.ragSources,
+    webSearchUsed: Boolean(item.webSearchUsed),
+    webSearchSources: item.webSearchSources,
+    tokensUsed: item.tokensUsed,
+    suggestedEvent: item.suggestedEvent,
+    dispatchedNotification: item.dispatchedNotification,
+  }));
+  res.json({ history: formatted });
+});
+
+app.post("/api/ai/history", (req, res) => {
+  const msg = req.body;
+  if (!msg || !msg.text) return res.status(400).json({ error: "Mensagem inválida" });
+  const existingIdx = DB.aiChatHistory.findIndex((m) => m.id === msg.id);
+  const entry = {
+    id: msg.id || `msg_${Date.now()}`,
+    sender: msg.sender || "user",
+    text: msg.text,
+    tenantId: msg.tenantId || "tenant_omni_01",
+    userId: msg.userId || "usr_master_01",
+    userName: msg.userName || "Colaborador",
+    userSector: msg.userSector || "Geral",
+    ragConsulted: msg.ragConsulted,
+    ragSources: msg.ragSources,
+    webSearchUsed: msg.webSearchUsed,
+    webSearchSources: msg.webSearchSources,
+    tokensUsed: msg.tokensUsed,
+    suggestedEvent: msg.suggestedEvent,
+    dispatchedNotification: msg.dispatchedNotification,
+    timestamp: msg.timestamp || new Date().toISOString(),
+  };
+  if (existingIdx >= 0) {
+    DB.aiChatHistory[existingIdx] = entry;
+  } else {
+    DB.aiChatHistory.push(entry);
+  }
+  res.json({ success: true, message: entry });
+});
+
+app.delete("/api/ai/history", (req, res) => {
+  const { tenantId, userId } = req.query;
+  if (userId) {
+    DB.aiChatHistory = DB.aiChatHistory.filter((m) => m.userId !== userId);
+  } else if (tenantId) {
+    DB.aiChatHistory = DB.aiChatHistory.filter((m) => m.tenantId !== tenantId);
+  } else {
+    DB.aiChatHistory = [];
+  }
+  res.json({ success: true, message: "Histórico limpo com sucesso" });
 });
 
 // 5.1 AI Event Scheduling via Natural Language

@@ -100,6 +100,7 @@ export const AgendaModule: React.FC = () => {
     const tenantId = tenant?.id || user?.tenantId || "tenant_omni_01";
     const userId = user?.id || "usr_master_01";
     const userEmail = user?.email || "colaborador@nexus.com.br";
+    const storageKey = `omnijarvis_agenda_events_${userId}`;
 
     try {
       setLoading(true);
@@ -107,6 +108,7 @@ export const AgendaModule: React.FC = () => {
       const dbEvents = await getAgendaEventsFromDb(tenantId, userId, userEmail);
       if (dbEvents && dbEvents.length > 0) {
         setEvents(dbEvents);
+        localStorage.setItem(storageKey, JSON.stringify(dbEvents));
         return;
       }
 
@@ -126,10 +128,32 @@ export const AgendaModule: React.FC = () => {
             return isOwner || isParticipant;
           });
           setEvents(userFiltered);
+          localStorage.setItem(storageKey, JSON.stringify(userFiltered));
+          return;
+        }
+      }
+
+      // 3. Fallback to LocalStorage
+      const localEvents = localStorage.getItem(storageKey);
+      if (localEvents) {
+        try {
+          const parsed = JSON.parse(localEvents);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setEvents(parsed);
+          }
+        } catch {
+          // ignore json parse error
         }
       }
     } catch (err) {
       console.warn("Could not fetch user agenda events:", err);
+      const localEvents = localStorage.getItem(storageKey);
+      if (localEvents) {
+        try {
+          const parsed = JSON.parse(localEvents);
+          if (Array.isArray(parsed)) setEvents(parsed);
+        } catch {}
+      }
     } finally {
       setLoading(false);
     }
@@ -137,6 +161,14 @@ export const AgendaModule: React.FC = () => {
 
   useEffect(() => {
     fetchEvents();
+
+    const handleEventCreated = () => {
+      fetchEvents();
+    };
+    window.addEventListener("omnijarvis_event_created", handleEventCreated);
+    return () => {
+      window.removeEventListener("omnijarvis_event_created", handleEventCreated);
+    };
   }, [tenant?.id, user?.id, user?.email]);
 
   // Check if a time slot has already passed
@@ -284,7 +316,11 @@ export const AgendaModule: React.FC = () => {
     };
 
     // 1. Optimistic Update
-    setEvents((prev) => [...prev, newEventPayload]);
+    setEvents((prev) => {
+      const updated = [...prev, newEventPayload];
+      localStorage.setItem(`omnijarvis_agenda_events_${user?.id || "usr_master_01"}`, JSON.stringify(updated));
+      return updated;
+    });
 
     // 2. Persist to Supabase
     saveAgendaEventToDb(newEventPayload, tenant?.id || "tenant_omni_01", user?.id, user?.email);
@@ -348,7 +384,11 @@ export const AgendaModule: React.FC = () => {
     };
 
     // 1. Optimistic Update
-    setEvents((prev) => prev.map((e) => (e.id === formEventId ? updatedPayload : e)));
+    setEvents((prev) => {
+      const updated = prev.map((e) => (e.id === formEventId ? updatedPayload : e));
+      localStorage.setItem(`omnijarvis_agenda_events_${user?.id || "usr_master_01"}`, JSON.stringify(updated));
+      return updated;
+    });
 
     // 2. Persist to Supabase
     updateAgendaEventInDb(updatedPayload, tenant?.id || "tenant_omni_01", user?.id);
@@ -383,7 +423,11 @@ export const AgendaModule: React.FC = () => {
   // Delete Event
   const handleDeleteEvent = async (evt: CalendarEvent) => {
     // 1. Optimistic update
-    setEvents((prev) => prev.filter((e) => e.id !== evt.id));
+    setEvents((prev) => {
+      const updated = prev.filter((e) => e.id !== evt.id);
+      localStorage.setItem(`omnijarvis_agenda_events_${user?.id || "usr_master_01"}`, JSON.stringify(updated));
+      return updated;
+    });
     if (selectedEventDetail?.id === evt.id) {
       setSelectedEventDetail(null);
     }
@@ -433,7 +477,11 @@ export const AgendaModule: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         if (data.event) {
-          setEvents((prev) => [...prev, data.event]);
+          setEvents((prev) => {
+            const updated = [...prev, data.event];
+            localStorage.setItem(`omnijarvis_agenda_events_${user?.id || "usr_master_01"}`, JSON.stringify(updated));
+            return updated;
+          });
           saveAgendaEventToDb(data.event, tenant?.id || "tenant_omni_01", user?.id, user?.email);
           showToast(`Compromisso agendado por IA: "${data.event.title}"`, "success");
         }
@@ -457,7 +505,11 @@ export const AgendaModule: React.FC = () => {
         userEmail: user?.email,
         createdBy: user?.id,
       };
-      setEvents((prev) => [...prev, fallbackEvent]);
+      setEvents((prev) => {
+        const updated = [...prev, fallbackEvent];
+        localStorage.setItem(`omnijarvis_agenda_events_${user?.id || "usr_master_01"}`, JSON.stringify(updated));
+        return updated;
+      });
       saveAgendaEventToDb(fallbackEvent, tenant?.id || "tenant_omni_01", user?.id, user?.email);
       showToast("Compromisso gerado e adicionado à sua agenda!", "success");
     } finally {

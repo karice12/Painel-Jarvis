@@ -105,14 +105,44 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     fetchQuotaStatus();
   }, [fetchQuotaStatus]);
 
-  // Load chat history from Supabase on component mount
+  // Load chat history from Supabase, Backend API and LocalStorage on mount
   useEffect(() => {
     async function loadHistory() {
-      if (!tenant?.id) return;
+      const tenantId = tenant?.id || "tenant_omni_01";
+      const userId = user?.id || "usr_master_01";
+      const storageKey = `omnijarvis_chat_history_${userId}`;
+
       try {
-        const history = await getAiChatHistoryFromDb(tenant.id, user?.id);
-        if (history && history.length > 0) {
-          setMessages(history);
+        // 1. Try Supabase
+        const dbHistory = await getAiChatHistoryFromDb(tenantId, userId);
+        if (dbHistory && dbHistory.length > 0) {
+          setMessages(dbHistory);
+          localStorage.setItem(storageKey, JSON.stringify(dbHistory));
+          return;
+        }
+
+        // 2. Try Backend API endpoint
+        const res = await fetch(`/api/ai/history?tenantId=${encodeURIComponent(tenantId)}&userId=${encodeURIComponent(userId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.history && data.history.length > 0) {
+            setMessages(data.history);
+            localStorage.setItem(storageKey, JSON.stringify(data.history));
+            return;
+          }
+        }
+
+        // 3. Fallback to LocalStorage
+        const localSaved = localStorage.getItem(storageKey);
+        if (localSaved) {
+          try {
+            const parsed = JSON.parse(localSaved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setMessages(parsed);
+            }
+          } catch {
+            // ignore JSON parse error
+          }
         }
       } catch (err) {
         console.warn("Could not load AI chat history:", err);
@@ -313,10 +343,29 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       isWebSearchEnabled,
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const newMsgsWithUser = [...messages, userMsg];
+    setMessages(newMsgsWithUser);
     setIsGenerating(true);
 
-    // Persist user message to Supabase
+    const storageKey = `omnijarvis_chat_history_${user?.id || "usr_master_01"}`;
+    localStorage.setItem(storageKey, JSON.stringify(newMsgsWithUser));
+
+    // Persist user message to Backend API and Supabase
+    fetch("/api/ai/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: userMsg.id,
+        sender: "user",
+        text: sanitizedText,
+        tenantId: tenant?.id || "tenant_omni_01",
+        userId: user?.id || "usr_master_01",
+        userName: user?.name || "Colaborador",
+        userSector: user?.sector || "Geral",
+        webSearchUsed: isWebSearchEnabled,
+      }),
+    }).catch(() => {});
+
     saveAiChatMessageToDb({
       id: userMsg.id,
       sender: "user",
@@ -358,7 +407,28 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       const fullResponseText = data.text;
       const msgId = `ai_${Date.now()}`;
 
-      // Persist assistant message to Supabase
+      // Persist assistant message to Backend API and Supabase
+      fetch("/api/ai/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: msgId,
+          sender: "assistant",
+          text: fullResponseText,
+          tenantId: tenant?.id || "tenant_omni_01",
+          userId: user?.id || "usr_master_01",
+          userName: "OpenJarvis AI",
+          userSector: user?.sector || "Geral",
+          ragConsulted: data.ragConsulted,
+          ragSources: data.ragSources,
+          webSearchUsed: data.webSearchUsed,
+          webSearchSources: data.webSearchSources,
+          tokensUsed: data.tokensUsed,
+          suggestedEvent: data.suggestedEvent,
+          dispatchedNotification: data.dispatchedNotification,
+        }),
+      }).catch(() => {});
+
       saveAiChatMessageToDb({
         id: msgId,
         sender: "assistant",
@@ -375,6 +445,34 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         suggestedEvent: data.suggestedEvent,
       }).catch((e) => console.warn("Supabase assistant msg save error:", e));
 
+      // If Jarvis scheduled or suggested an event, ensure it is saved and synced to the Agenda
+      if (data.suggestedEvent) {
+        fetch("/api/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...data.suggestedEvent,
+            category: "reuniao",
+            type: "reuniao",
+            isAiGenerated: true,
+            userId: user?.id || "usr_master_01",
+            userName: user?.name || "Colaborador",
+            userEmail: user?.email || "colaborador@nexus.com.br",
+            tenantId: tenant?.id || "tenant_omni_01",
+          }),
+        }).catch((e) => console.warn("Auto event save error:", e));
+
+        window.dispatchEvent(
+          new CustomEvent("omnijarvis_event_created", {
+            detail: {
+              ...data.suggestedEvent,
+              userId: user?.id,
+              userEmail: user?.email,
+            },
+          })
+        );
+      }
+
       // Update Web Search quota locally
       fetchQuotaStatus();
 
@@ -385,23 +483,22 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         })
       );
 
+      const assistantMsgObj: OpenJarvisMessage = {
+        id: msgId,
+        sender: "assistant",
+        text: "",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        ragConsulted: data.ragConsulted,
+        ragSources: data.ragSources,
+        webSearchUsed: data.webSearchUsed,
+        webSearchSources: data.webSearchSources,
+        suggestedEvent: data.suggestedEvent,
+        dispatchedNotification: data.dispatchedNotification,
+        tokensUsed: data.tokensUsed,
+      };
+
       // Create empty assistant message for typewriter effect
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: msgId,
-          sender: "assistant",
-          text: "",
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          ragConsulted: data.ragConsulted,
-          ragSources: data.ragSources,
-          webSearchUsed: data.webSearchUsed,
-          webSearchSources: data.webSearchSources,
-          suggestedEvent: data.suggestedEvent,
-          dispatchedNotification: data.dispatchedNotification,
-          tokensUsed: data.tokensUsed,
-        },
-      ]);
+      setMessages((prev) => [...prev, assistantMsgObj]);
 
       // Smooth typewriter effect simulation
       let currentIndex = 0;
@@ -412,6 +509,10 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
           currentIndex = fullResponseText.length;
           clearInterval(interval);
           setIsGenerating(false);
+
+          // Save final full response to LocalStorage
+          const finalizedMsgs = [...newMsgsWithUser, { ...assistantMsgObj, text: fullResponseText }];
+          localStorage.setItem(storageKey, JSON.stringify(finalizedMsgs));
         }
         setMessages((prev) =>
           prev.map((m) =>
@@ -507,8 +608,18 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const clearChat = () => {
+  const clearChat = async () => {
     setMessages([]);
+    const userId = user?.id || "usr_master_01";
+    const storageKey = `omnijarvis_chat_history_${userId}`;
+    localStorage.removeItem(storageKey);
+    try {
+      await fetch(`/api/ai/history?tenantId=${encodeURIComponent(tenant?.id || "tenant_omni_01")}&userId=${encodeURIComponent(userId)}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // ignore
+    }
   };
 
   return (
@@ -974,25 +1085,39 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                       id="btn-add-event-from-chat"
                       type="button"
                       onClick={() => {
+                        fetch("/api/events", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            ...msg.suggestedEvent,
+                            category: "reuniao",
+                            type: "reuniao",
+                            isAiGenerated: true,
+                            userId: user?.id || "usr_master_01",
+                            userName: user?.name || "Colaborador",
+                            userEmail: user?.email || "colaborador@nexus.com.br",
+                            tenantId: tenant?.id || "tenant_omni_01",
+                          }),
+                        }).catch(() => {});
+
+                        window.dispatchEvent(
+                          new CustomEvent("omnijarvis_event_created", {
+                            detail: {
+                              ...msg.suggestedEvent,
+                              userId: user?.id,
+                              userEmail: user?.email,
+                            },
+                          })
+                        );
+
                         if (onAddEventToAgenda) {
                           onAddEventToAgenda(msg.suggestedEvent);
-                        } else {
-                          fetch("/api/events", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              ...msg.suggestedEvent,
-                              category: "ia_gerado",
-                              isAiGenerated: true,
-                            }),
-                          });
-                          alert("Compromisso adicionado à sua Agenda com sucesso!");
                         }
                       }}
                       className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                     >
                       <Calendar className="w-3.5 h-3.5" />
-                      <span>Confirmar & Adicionar à Agenda Corporativa</span>
+                      <span>📅 Visualizar na Minha Agenda</span>
                     </button>
                   </div>
                 )}
