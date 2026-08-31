@@ -1697,43 +1697,79 @@ Estou pronto para analisar documentos da nossa base de conhecimento, agendar com
 
 // 4.5 Neural Text-to-Speech (Edge-TTS pt-BR-AntonioNeural & pt-BR-FranciscaNeural)
 function sanitizeTextForSpeech(raw: string): string {
-  if (!raw) return "";
+  if (!raw || typeof raw !== "string") return "";
   let clean = raw;
-  // Remove event/json codeblocks
+
+  // 1. Remove blocos de código e blocos json/eventos
   clean = clean.replace(/```[\s\S]*?```/g, "");
-  // Remove inline code
   clean = clean.replace(/`([^`]+)`/g, "$1");
-  // Remove markdown images
+
+  // 2. Remove imagens markdown
   clean = clean.replace(/!\[[^\]]*\]\([^\)]*\)/g, "");
-  // Remove markdown links keeping text
+
+  // 3. Converte links markdown mantendo apenas o texto da âncora: [STJ](https://...) -> STJ
   clean = clean.replace(/\[([^\]]+)\]\([^\)]*\)/g, "$1");
-  // Remove markdown tables (| header | header |)
-  clean = clean.replace(/\|[^\n]+\|/g, " ");
-  // Remove headers
-  clean = clean.replace(/^#{1,6}\s+/gm, "");
-  // Remove blockquotes
-  clean = clean.replace(/^>\s+/gm, "");
-  // Remove bullet points
-  clean = clean.replace(/^[\s*•\-–—]+|\d+\.\s+/gm, "");
-  // Remove bold & italics markers
-  clean = clean.replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1");
-  clean = clean.replace(/[*_]/g, "");
-  // Remove URLs
+
+  // 4. Remove URLs avulsas
   clean = clean.replace(/https?:\/\/\S+/g, "");
-  // Remove emojis
+
+  // 5. Remove marcações de formatação Markdown (*, #, _, ~, >, |, [, ], (, ), {, })
+  clean = clean.replace(/[\*#_~>|\[\]\(\)\{\}]/g, " ");
+
+  // 6. Converte o símbolo & para ' e ' para fala natural e compatibilidade XML SSML
+  clean = clean.replace(/\s*&\s*/g, " e ");
+
+  // 7. Remove tags HTML e caracteres XML inseguros (<, >)
+  clean = clean.replace(/[<>]/g, "");
+
+  // 8. Remove emojis e ícones especiais
   clean = clean.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}]/gu, "");
-  // Clean multiple spaces and newlines
+
+  // 9. Normaliza espaços e quebras de linha
   clean = clean.replace(/\s+/g, " ").trim();
-  
-  // Truncate to reasonable length (e.g. 1500 chars) for snappy playback
+
+  // Limite de caracteres para fala fluida (evita sobrecarga)
   if (clean.length > 1500) {
     clean = clean.slice(0, 1500);
     const lastPunct = Math.max(clean.lastIndexOf("."), clean.lastIndexOf("!"), clean.lastIndexOf("?"));
-    if (lastPunct > 400) {
+    if (lastPunct > 300) {
       clean = clean.slice(0, lastPunct + 1);
     }
   }
+
   return clean;
+}
+
+async function synthesizeNeuralAudioBuffer(text: string, voice: string): Promise<Buffer> {
+  const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
+  const tts = new MsEdgeTTS();
+  await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+
+  return new Promise<Buffer>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("Timeout ao sintetizar áudio neural"));
+    }, 15000);
+
+    try {
+      const { audioStream } = tts.toStream(text);
+      const chunks: Buffer[] = [];
+      audioStream.on("data", (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      audioStream.on("end", () => {
+        clearTimeout(timeout);
+        const fullBuf = Buffer.concat(chunks);
+        resolve(fullBuf);
+      });
+      audioStream.on("error", (err: any) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    } catch (err) {
+      clearTimeout(timeout);
+      reject(err);
+    }
+  });
 }
 
 app.all("/api/tts", async (req, res) => {
@@ -1745,7 +1781,7 @@ app.all("/api/tts", async (req, res) => {
 
     const textToSpeak = sanitizeTextForSpeech(rawText) || "Olá, tudo bem? Estou à disposição para ajudar.";
 
-    // Select neural voice:
+    // Seleção de voz neural:
     // pt-BR-AntonioNeural: Corporativo, Jurídico, Contabilidade, Executivo
     // pt-BR-FranciscaNeural: Varejo, Atendimento, SAC, Acolhedor
     let selectedVoice = "pt-BR-AntonioNeural";
@@ -1763,20 +1799,18 @@ app.all("/api/tts", async (req, res) => {
       selectedVoice = requestedVoice;
     }
 
-    const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    const { audioStream } = tts.toStream(textToSpeak);
+    const audioBuffer = await synthesizeNeuralAudioBuffer(textToSpeak, selectedVoice);
 
     res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Length", audioBuffer.length);
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.setHeader("X-Voice-Used", selectedVoice);
 
-    audioStream.pipe(res);
+    res.end(audioBuffer);
   } catch (err: any) {
     console.error("[TTS Generation Error]:", err);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Falha ao sintetizar áudio neural", details: err?.message });
+      res.status(500).json({ error: "Falha ao sintetizar áudio neural", details: err?.message || String(err) });
     }
   }
 });

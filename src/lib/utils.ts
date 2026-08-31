@@ -51,3 +51,51 @@ export function sanitizeInput(input: string): string {
 
   return clean.trim();
 }
+
+/**
+ * Limpa marcações Markdown (*, #, _, ~, [, ], (, ), links e URLs) para síntese de voz fluida
+ */
+export function sanitizeMarkdownForTTS(text: string): string {
+  if (!text || typeof text !== "string") return "";
+  let clean = text;
+
+  // 1. Remove blocos de código
+  clean = clean.replace(/```[\s\S]*?```/g, "");
+  clean = clean.replace(/`([^`]+)`/g, "$1");
+
+  // 2. Remove imagens markdown
+  clean = clean.replace(/!\[[^\]]*\]\([^\)]*\)/g, "");
+
+  // 3. Converte links markdown mantendo apenas o texto da âncora: [STJ](https://...) -> STJ
+  clean = clean.replace(/\[([^\]]+)\]\([^\)]*\)/g, "$1");
+
+  // 4. Remove URLs avulsas
+  clean = clean.replace(/https?:\/\/\S+/g, "");
+
+  // 5. Remove marcações de formatação Markdown (*, #, _, ~, >, |, [, ], (, ), {, })
+  clean = clean.replace(/[\*#_~>|\[\]\(\)\{\}]/g, " ");
+
+  // 6. Converte o símbolo & para ' e ' para fala natural e compatibilidade XML
+  clean = clean.replace(/\s*&\s*/g, " e ");
+
+  // 7. Remove tags HTML e caracteres XML inseguros (<, >)
+  clean = clean.replace(/[<>]/g, "");
+
+  // 8. Remove emojis e ícones especiais
+  clean = clean.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}]/gu, "");
+
+  // 9. Normaliza espaços e quebras de linha
+  clean = clean.replace(/\s+/g, " ").trim();
+
+  // Limite de caracteres para fala fluida
+  if (clean.length > 1500) {
+    clean = clean.slice(0, 1500);
+    const lastPunct = Math.max(clean.lastIndexOf("."), clean.lastIndexOf("!"), clean.lastIndexOf("?"));
+    if (lastPunct > 300) {
+      clean = clean.slice(0, lastPunct + 1);
+    }
+  }
+
+  return clean;
+}
+

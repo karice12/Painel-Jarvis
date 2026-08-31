@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { OpenJarvisMessage, RagCitation, WebSearchQuotaInfo } from "../../types";
-import { cn, sanitizeInput } from "../../lib/utils";
+import { cn, sanitizeInput, sanitizeMarkdownForTTS } from "../../lib/utils";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getWebSearchQuota, sendChatMessage, getAiUsageStatus, getNeuralSpeechAudioUrl } from "../../services/api";
 import { getAiChatHistoryFromDb, saveAiChatMessageToDb } from "../../services/supabaseDb";
@@ -260,8 +260,14 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         }
       }
 
+      const cleanText = sanitizeMarkdownForTTS(text);
+      if (!cleanText) {
+        stopNeuralAudio();
+        return;
+      }
+
       const blobUrl = await getNeuralSpeechAudioUrl({
-        text,
+        text: cleanText,
         voice: chosenVoice,
         sector: user?.sector,
         profile: tenant?.aiSettings?.mainProfile,
