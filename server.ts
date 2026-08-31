@@ -760,16 +760,42 @@ DIRETRIZES DO PERFIL: GERAL & MULTISSETORIAL (TEMPERATURA 0.3)
     return false;
   }
 
+  function decodeHtmlEntities(str: string): string {
+    if (!str) return "";
+    return str
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec));
+  }
+
+  function stripHtmlTags(str: string): string {
+    if (!str) return "";
+    const decoded = decodeHtmlEntities(str);
+    return decoded
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&[a-z0-9#]+;/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   function cleanWebSnippet(raw: string): string {
     if (!raw) return "";
-    let clean = raw
-      .replace(/(?:este site|o portal|nosso site|nós)?\s*(?:utiliza|utilizamos|usa|usamos)\s+cookies(?:\s+para\s+melhorar\s+sua\s+experi[eê]ncia)?[^.]*\./gi, "")
-      .replace(/Ao\s+continuar\s+navegando,\s+voc[eê]\s+concorda\s+com\s+(?:nossa|a)\s+Pol[ií]tica\s+de\s+Privacidade[^.]*\./gi, "")
+    let clean = stripHtmlTags(raw);
+    clean = clean
+      .replace(/(?:este site|o portal|nosso site|nós)?\s*(?:utiliza|utilizamos|usa|usamos)\s+cookies(?:\s+para\s+melhorar\s+sua\s+experi[eê]ncia)?[^.]*\.?/gi, "")
+      .replace(/Ao\s+continuar\s+navegando,\s+voc[eê]\s+concorda\s+com\s+(?:nossa|a)\s+Pol[ií]tica\s+de\s+Privacidade[^.]*\.?/gi, "")
       .replace(/Todos\s+os\s+direitos\s+reservados[^.]*\.?/gi, "")
       .replace(/Inscreva-se\s+no\s+canal[^.]*\.?/gi, "")
       .replace(/Deixe\s+seu\s+like[^.]*\.?/gi, "")
       .replace(/\s+/g, " ")
       .trim();
+    // Strip trailing truncated words, ellipsis or cutoffs
+    clean = clean.replace(/\s*\.{2,}\s*$/, "").trim();
     return clean;
   }
 
@@ -838,18 +864,18 @@ async function fetchRealWebSources(
         const descMatch = /<description>([\s\S]*?)<\/description>/i.exec(itemContent);
 
         if (titleMatch && linkMatch) {
-          const rawTitle = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").replace(/<[^>]+>/g, "").trim();
+          const rawTitle = stripHtmlTags(titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1")).trim();
           const rawLink = linkMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").trim();
           let rawDesc = descMatch
-            ? descMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").replace(/<[^>]+>/g, "").trim()
+            ? stripHtmlTags(descMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1")).trim()
             : rawTitle;
-          if (rawDesc.length > 250) rawDesc = rawDesc.substring(0, 250) + "...";
+          const cleanedSnippet = cleanSnippetFn(rawDesc);
 
           if (rawTitle && !sources.some((s) => s.title === rawTitle)) {
             sources.push({
               title: rawTitle,
               url: rawLink,
-              snippet: cleanSnippetFn(rawDesc) || rawTitle,
+              snippet: cleanedSnippet || rawTitle,
               publishedDate: pubDateMatch
                 ? new Date(pubDateMatch[1]).toLocaleDateString("pt-BR")
                 : new Date().toLocaleDateString("pt-BR"),
@@ -1111,17 +1137,31 @@ ${auditsSnapshot.length > 0 ? auditsSnapshot.join("\n") : "• Sistema operando 
 `;
 
   const basePrompt = customSystemInstruction || `Você é o OpenJarvis, o motor de Inteligência Artificial Corporativa e Assistente Executivo Multissetorial de alto desempenho da empresa "${tenant?.name || 'Nexus Enterprise'}".
-Você atua como um especialista humano sênior conversando diretamente com o usuário no dia a dia, com total acesso autônomo aos dados corporativos (usuário atual: ${userName}, setor: ${userSector}, cargo: ${userRole}).
+Você atua como um consultor sênior pragmático conversando diretamente com o usuário (usuário atual: ${userName}, setor: ${userSector}, cargo: ${userRole}).
 
 ====================================================================
-1. REGRAS MANDATÓRIAS DE TOM, PERSONA E FORMATAÇÃO
+1. DIRETRIZES ABSOLUTAS DE SÍNTESE ANALÍTICA (PESQUISA WEB E RAG)
 ====================================================================
-- TOM CONSULTIVO E NATURAL: Converse com naturalidade, clareza, empatia e objetividade, como um consultor sênior em um diálogo de trabalho.
-- PROIBIÇÃO DE TÍTULOS ROBÓTICOS DE RELATÓRIO: É EXPRESSAMENTE PROIBIDO iniciar a resposta com títulos genéricos como "Relatório Executivo Analítico", "1. Resumo Executivo", "I. Dos Fatos", "Diagnóstico Técnico" ou similares. Inicie SEMPRE direto no assunto, de forma fluida.
-- LIMPEZA DE TEXTO (SEM URLs NO CORPO DA MENSAGEM):
-  * É EXPRESSAMENTE PROIBIDO escrever URLs brutas (ex: "https://..."), links markdown [Título](http...) ou marcadores como "*Referência:* [http...]" dentro do texto da mensagem.
-  * Cite apenas os nomes das leis, órgãos (ex: Receita Federal, STF, CDC, LGPD), documentos ou termos técnicos no texto.
-  * Todas as fontes e links de internet/RAG são apresentados EXCLUSIVAMENTE pelo componente visual "Fontes Consultadas" da interface.
+1. ESTRITAMENTE PROIBIDO (LIXO DE CÓDIGO, HTML E SNIPPETS CORTADOS):
+- NUNCA repasse tags HTML (como <a href>, &lt;, &gt;, &quot;, &amp;), links em Markdown ou metadados de busca no corpo do texto.
+- NUNCA termine frases com reticências geradas por cortes de buscadores (ex: "Na trilha d...").
+- NUNCA liste snippets brutos de busca (ex: PROIBIDO formatar como "Fonte: texto do snippet").
+
+2. SÍNTESE OBRIGATÓRIA (NÃO SEJA UM PAPAGAIO DE SNIPPETS):
+- Quando receber resultados de busca web ou da base interna (RAG), leia e interprete os dados criticamente.
+- Escreva uma resposta completa, autoral, articulada e fluida com as suas próprias palavras.
+- Se o trecho da busca estiver incompleto, deduza o contexto principal ou foque apenas nos fatos legíveis, entregando uma explicação clara, com início, meio e fim.
+
+3. FIM DAS MULETAS TEXTUAIS (COMUNICAÇÃO DIRETA):
+- É EXPRESSAMENTE PROIBIDO usar introduções narrativas robóticas (ex: "Apurando as informações mais recentes...", "Fiz uma pesquisa e encontrei...", "Aqui estão os resultados...", "Realizei a varredura na web...", "Consultei a rede...").
+- É EXPRESSAMENTE PROIBIDO usar encerramentos genéricos de suporte (ex: "Se você quiser, posso detalhar...", "Como posso ajudar mais com isso?", "Deseja que eu aprofunde algum ponto?", "Se precisar, é só me falar!").
+- COMECE A RESPOSTA DIRETO NO ASSUNTO (NO FATO).
+- TERMINE A RESPOSTA COM A CONCLUSÃO DA ANÁLISE, mantendo sempre o tom de consultor sênior pragmático.
+
+4. LIMPEZA TOTAL DE TEXTO (SEM URLs NO CORPO DA MENSAGEM):
+- É expressamente proibido incluir URLs brutas (https://...) ou links markdown [Título](http...) no texto.
+- Cite apenas nomes de diplomas legais, órgãos reguladores (ex: STJ, STF, Receita Federal, CDC, LGPD), documentos ou termos técnicos.
+- As fontes e links serão renderizados exclusivamente pelo componente visual dedicado "Fontes Consultadas" na interface.
 
 ====================================================================
 2. ADAPTAÇÃO DINÂMICA DE DOMÍNIO
@@ -1164,31 +1204,7 @@ Você atua como um especialista humano sênior conversando diretamente com o usu
 ====================================================================
 5. DIAGNÓSTICO EXECUTIVO PARA O MASTER ADMIN
 ====================================================================
-- Quando o Master Admin ou liderança perguntar como está a saúde da empresa, projetos, agenda e auditorias, apresente uma visão executiva direta, clara e prática com indicadores de infraestrutura, reuniões ativas, volumetria documental e recomendações acionáveis.
-
-====================================================================
-6. PESQUISA WEB EM TEMPO REAL: FILTRO ANTI-LIXO E REGRA DE SÍNTESE INTELIGENTE
-====================================================================
-- FILTRO ANTI-LIXO MANDATÓRIO:
-  * Você deve FILTRAR E DESCARTAR imediatamente qualquer trecho ou snippet de busca que contenha termos de navegação, avisos de cookies ("utiliza cookies", "aceite os termos", "política de privacidade", "concordo com os cookies", "este site usa cookies"), pedidos de inscrição de redes sociais ("inscreva-se no canal", "deixe seu like", "veja fotos e vídeos no Instagram") ou descrições genéricas sem conteúdo informativo real.
-  * Se a busca retornar apenas esses textos institucionais ou avisos de cookies, IGNORE-OS TOTALMENTE e NUNCA os reproduza ao usuário.
-
-- REGRA DE SÍNTESE INTELIGENTE (PROIBIDO COPIAR OU LISTAR SNIPPETS):
-  * A IA está TERMINANTEMENTE PROIBIDA de listar os resultados da busca com formato de lista de snippets (ex: PROIBIDO usar "**Nome do Site:** texto do snippet").
-  * A IA deve LER criticamente todos os resultados válidos, extrair a informação real de valor (notícias, decisões do STJ/STF, dados de mercado, alíquotas, fatos ou acontecimentos) e responder em TEXTO CORRIDO E CONSULTIVO.
-  * Exemplo de aplicação:
-    * ERRADO (Robótico / Cópia de Snippet): "**Notícias STJ:** O portal usa cookies para melhorar sua experiência. **G1:** O STJ decidiu hoje..."
-    * CORRETO (Consultivo & Sintetizado): "O Superior Tribunal de Justiça (STJ) julgou recentemente matérias voltadas ao direito tributário e bancário. Dentre os destaques, a jurisprudência recente consolida que a responsabilidade civil nas relações empresariais exige demonstração cabal do nexo de causalidade..."
-
-- LIMPEZA DE TEXTO (SEM URLs NO CORPO DA MENSAGEM):
-  * Não inclua links markdown [http...] nem URLs brutas no texto. Os links e fontes de consulta são renderizados exclusivamente pelo componente de interface "Fontes Consultadas".
-
-====================================================================
-7. PROCESSAMENTO DE RAG (BASE DE CONHECIMENTO INTERNA)
-====================================================================
-- Ao utilizar dados de documentos internos recuperados via RAG:
-  * Trate as informações dos documentos como diretrizes da empresa.
-  * Integre as políticas e dados corporativos no fluxo natural da conversa, citando os nomes dos documentos e setores sem formatações engessadas.`;
+- Quando o Master Admin ou liderança perguntar como está a saúde da empresa, projetos, agenda e auditorias, apresente uma visão executiva direta, clara e prática com indicadores de infraestrutura, reuniões ativas, volumetria documental e recomendações acionáveis.`;
 
   const systemInstruction = `${basePrompt}
 
@@ -1453,95 +1469,121 @@ Perfeito, ${userName}! A solicitação foi processada com autonomia total pelo O
       };
       responseText = `${greeting}Analisei sua solicitação e executei a reserva na agenda corporativa:\n\n📅 **${suggestedEvent.title}**\n🗓️ **Data:** ${suggestedEvent.date}\n⏰ **Horário:** ${suggestedEvent.startTime} - ${suggestedEvent.endTime}\n👥 **Participantes:** ${suggestedEvent.participants.join(", ")}\n\nO compromisso já foi registrado no calendário oficial do Workspace.`;
     } else if (ragSources.length > 0) {
-      responseText = `Consultei as diretrizes oficiais da nossa base interna e localizei as orientações aplicáveis ao setor de **${userSector}**:
-
-${ragSources.map((s) => `* **${s.docName}:** "${s.snippet}"`).join("\n\n")}
-
-Em termos práticos, essas diretrizes são de aplicação mandatória na organização. Se precisar que eu elabore um plano de ação específico ou aprofunde algum ponto dessas políticas, é só me falar!`;
+      const synthesisedPoints = ragSources
+        .map((s) => s.snippet.replace(/\s*\.{2,}\s*$/, "").trim())
+        .filter(Boolean)
+        .slice(0, 3);
+      
+      responseText = `As diretrizes corporativas vigentes para o setor de **${userSector}** estabelecem a conformidade com as normas internas de segurança, integridade e governança. ${synthesisedPoints.join(" ")} A aplicação dessas regras é obrigatória em todos os fluxos operacionais da organização.`;
     } else {
       const lowerClean = message.toLowerCase().trim();
       const isGreetingOnly = /^(ol[aá]|oi|bom dia|boa tarde|boa noite|opa|fala jarvis|e a[ií])[\s!.]*$/i.test(lowerClean);
 
       if (isGreetingOnly) {
-        responseText = `Olá, **${userName}**! Sou o Jarvis, seu assistente inteligente integrado ao painel corporativo da ${tenant?.name || 'Nexus Enterprise'}. Como posso te apoiar agora? Posso tirar dúvidas, analisar temas na internet em tempo real, examinar leis ou organizar seus compromissos.`;
+        responseText = `Olá, **${userName}**. Estou pronto para apoiar as demandas executivas, jurídicas, contábeis e operacionais do Workspace corporativo.`;
       } else if (/1988|constitui[cç][aã]o/i.test(lowerClean)) {
-        responseText = `A **Constituição Federal de 1988**, carinhosamente chamada de "Constituição Cidadã", é a base de todo o ordenamento jurídico brasileiro. Ela foi promulgada em 5 de outubro de 1988 para restabelecer a democracia e garantir os direitos humanos após o regime militar.
+        responseText = `A **Constituição Federal de 1988** (Constituição Cidadã) é a norma fundamental e ápice da hierarquia legislativa brasileira, promulgada em 5 de outubro de 1988 para consolidar a redemocratização e o Estado Democrático de Direito.
 
-Na prática, ela organiza o país em quatro pilares centrais:
+A ordem constitucional organiza-se sobre quatro eixos estruturantes:
 
-1. **Direitos e Garantias Fundamentais:** Assegura a dignidade da pessoa humana, a igualdade de gênero, a liberdade de expressão e manifestação, o devido processo legal e direitos sociais como saúde, educação, moradia, trabalho e previdência social.
-2. **Separação e Harmonia dos Poderes:** Divide a atuação do Estado entre o Executivo (administração do país), o Legislativo (elaboração e fiscalização das leis) e o Judiciário (garantia do cumprimento da Constituição e das leis).
-3. **Estado Democrático de Direito:** Determina que todo o poder emana do povo, exercido diretamente ou por meio de representantes eleitos pelo voto direto, secreto e universal.
-4. **Ordem Econômica e Social:** Harmoniza os princípios da livre iniciativa e do mercado com a valorização do trabalho e a função social da empresa e da propriedade privada.
+1. **Direitos e Garantias Fundamentais:** Consagra a dignidade da pessoa humana, a isonomia material, a liberdade de manifestação e cátedra, as cláusulas pétreas do devido processo legal e os direitos sociais (saúde, educação, trabalho, moradia e previdência).
+2. **Separação e Harmonia dos Poderes:** Estabelece o sistema de freios e contrapesos (*checks and balances*) entre o Poder Executivo (administração e políticas públicas), o Poder Legislativo (produção normativa e fiscalização) e o Poder Judiciário (controle de constitucionalidade e jurisdição).
+3. **Soberania Popular e Estado de Direito:** Define que todo poder emana do povo, exercido diretamente ou por mandatários eleitos mediante sufrágio universal e voto direto e secreto.
+4. **Ordem Econômica e Social:** Harmoniza a livre iniciativa e o regime de mercado com a função social da propriedade, a defesa do consumidor, a repressão ao abuso do poder econômico e o desenvolvimento nacional equilibrado.
 
-Ela é a espinha dorsal de normas como a CLT, o Código Civil, o Código de Defesa do Consumidor e a legislação tributária. Se você quiser que eu aprofunde algum artigo específico ou analise a aplicação prática dela em algum tema da empresa, é só me dizer!`;
+A Carta Magna fundamenta todo o arcabouço infraconstitucional pátrio, subordinando normas como o Código Civil, o Código de Defesa do Consumidor, a Consolidação das Leis do Trabalho e a legislação tributária.`;
       } else if (/stj|superior tribunal de justi[cç]a|jurisprud[eê]ncia|decis[aã]o|s[uú]mula/i.test(lowerClean)) {
-        responseText = `O Superior Tribunal de Justiça (STJ) uniformiza a interpretação das leis federais no Brasil. Em matérias civis e empresariais, o tribunal tem enfatizado a boa-fé objetiva nos negócios jurídicos, a proteção ao consumidor e a segurança nas transações contratuais.
+        responseText = `O **Superior Tribunal de Justiça (STJ)** exerce a função de uniformizar a interpretação e a aplicação das leis federais infraconstitucionais em todo o território nacional.
 
-Se você tiver um caso prático ou contrato em andamento, posso verificar como o entendimento do tribunal se aplica a ele.`;
+Na seara civil e empresarial, a jurisprudência consolidada do tribunal prioriza a boa-fé objetiva, a vedação ao enriquecimento sem causa, a função social dos contratos e a exigência de prova inequívoca do nexo causal nas demandas indenizatórias. Em matéria de direito do consumidor e bancário, prevalecem as teses fixadas em julgamento de recursos repetitivos que balizam a responsabilidade das instituições e garantem segurança jurídica às relações contratuais.`;
       } else if (webSearchUsed && webSearchSources.length > 0) {
-        const topSnippets = webSearchSources
-          .filter((s) => s.snippet && s.snippet.length > 25)
-          .map((s) => s.snippet.trim())
-          .slice(0, 3)
-          .join(" ");
+        const cleanSnippets = webSearchSources
+          .filter((s) => s.snippet && s.snippet.length > 20)
+          .map((s) => s.snippet.replace(/\s*\.{2,}\s*$/, "").trim())
+          .slice(0, 3);
 
-        if (topSnippets) {
-          responseText = `Apurando as informações mais recentes na web sobre esse tema, verifiquei que ${topSnippets.replace(/\s+/g, " ")}
-
-Se você quiser, posso detalhar qualquer ponto dessa matéria ou analisar como ela se conecta com as atividades da nossa empresa.`;
+        if (cleanSnippets.length > 0) {
+          const synthesisBody = cleanSnippets.join(" ");
+          responseText = `O panorama consolidado a respeito deste tema indica que ${synthesisBody} Essa evolução reflete as diretrizes vigentes e o direcionamento atual do setor no cenário prático.`;
         } else {
-          responseText = `Pesquisei esse assunto na rede em tempo real e consultei as fontes mais recentes. Os dados confirmam o panorama atual e as diretrizes aplicáveis à matéria.
-
-Deseja que eu aprofunde algum ponto específico ou prepare um resumo executivo para você?`;
+          responseText = `Os registros e dados atualizados confirmam a estabilidade das normas e parâmetros vigentes aplicáveis a essa matéria no mercado nacional.`;
         }
       } else if (effectiveProfile === "Jurídico & Compliance" || effectiveProfile === "juridico") {
-        responseText = `Analisando a sua consulta sob a ótica jurídica e de conformidade:
+        responseText = `As relações contratuais e societárias submetem-se aos princípios da probidade e boa-fé objetiva, conforme disposto nos **Artigos 421 e 422 do Código Civil**.
 
-Segundo o **Art. 421 e 422 do Código Civil**, as relações contratuais devem sempre observar os princípios da função social e da boa-fé objetiva. Além disso, de acordo com o **Art. 7º e 46 da LGPD (Lei nº 13.709/2018)**, qualquer tratamento de dados decorrente dessa operação precisa de base legal clara e medidas de segurança técnicas e administrativas comprovadas.
-
-Se houver relação de consumo envolvida, o **Art. 18 do CDC** estabelece responsabilidade solidária por vícios do produto ou serviço.
-
-Minha recomendação prática é mantermos o registro probatório formal de todas as tratativas para afastar qualquer alegação de má-fé ou passivo futuro. Deseja que eu elabore uma cláusula protetiva ou prepare uma minuta contratual com esses termos?`;
+Adicionalmente, qualquer tratamento ou tráfego de dados pessoais decorrente das rotinas corporativas exige enquadramento em uma das bases legais estipuladas no **Artigo 7º da LGPD (Lei nº 13.709/2018)**, aliado à manutenção de medidas de segurança aptas a proteger as informações contra acessos não autorizados. Em relações de consumo, a responsabilidade por vícios e garantia de conformidade é regida solidariamente pelo **Artigo 18 do CDC**. A formalização probatória e a governança contratual preventiva são indispensáveis para mitigar passivos regulatórios.`;
       } else if (effectiveProfile === "Contabilidade & Finanças" || effectiveProfile === "contabilidade") {
-        responseText = `Avaliando a sua questão sob a perspectiva contábil e fiscal:
+        responseText = `O tratamento contábil e fiscal de receitas e provisões deve seguir rigorosamente o regime de competência, em estrita observância à **Instrução Normativa RFB nº 2.121/2022** e aos pronunciamentos técnicos **CPC 00 e CPC 30**.
 
-Conforme as diretrizes da **Instrução Normativa RFB nº 2.121/2022** e os pronunciamentos técnicos do **CPC 00 e CPC 30**, as receitas e obrigações devem ser reconhecidas pelo regime de competência, garantindo conciliação precisa com a escrituração digital.
-
-| Tributo / Obrigação | Alíquota de Referência | Observação Prática |
+| Tributo / Obrigação | Regime de Incidência | Alíquota de Referência |
 | :--- | :--- | :--- |
-| **PIS / COFINS** | 0,65% / 3,00% (Cumulativo) ou 1,65% / 7,60% (Não-Cumulativo) | Incidência direta sobre o faturamento |
-| **IRPJ & CSLL** | 15% + 10% adicional / 9% | Apuração trimestral ou anual |
-| **SPED Fiscal / EFD** | Obrigação Acessória | Transmissão digital tempestiva |
+| **PIS / COFINS** | Cumulativo / Não-Cumulativo | 0,65% / 3,00% ou 1,65% / 7,60% |
+| **IRPJ / CSLL** | Lucro Presumido / Real | 15% (+10% adicional) / 9% |
+| **EFD / SPED** | Obrigação Acessória Digital | Transmissão Periódica RFB |
 
-O recolhimento deve ser apurado via DARF dentro dos prazos oficiais da Receita Federal para evitar encargos moratórios. Posso simular a memória de cálculo para a sua demanda.`;
+A apuração tempestiva via DARF e a conciliação mensal dos saldos evitam multas de mora e garantem total conformidade nas auditorias contábeis.`;
       } else if (effectiveProfile === "Varejo & Atendimento" || effectiveProfile === "varejo") {
-        responseText = `Olá, **${userName}**! 
+        responseText = `As diretrizes de atendimento ao cliente e suporte operacional orientam-se pela resolução em primeiro contato (FCR) e transparência nas políticas de troca:
 
-* **Diretrizes de Atendimento:** Foco na agilidade e resolução em primeiro contato (FCR).
-* **Política de Troca e Devolução:** Conforme o **Art. 49 do Código de Defesa do Consumidor (CDC)**, o cliente tem até 7 dias corridos para arrependimento em compras online com reembolso integral.
-* **Garantia Legal:** De 30 a 90 dias conforme o **Art. 18 do CDC**.
+* **Direito de Arrependimento:** O **Artigo 49 do CDC** assegura o prazo legal de 7 dias corridos para cancelamento de compras não presenciais, com devolução integral dos valores pagos.
+* **Vício do Produto e Garantia Legal:** O **Artigo 18 do CDC** estabelece responsabilidade solidária dos fornecedores, com prazo decadencial de 30 dias para produtos não duráveis e 90 dias para produtos duráveis.
 
-Como posso te apoiar agora no desdobramento dessa solicitação?`;
+A padronização dos fluxos de pós-venda resguarda a operação contra litígios administrativos e fortalece a retenção de clientes.`;
       } else {
-        responseText = `Compreendi a sua dúvida. Analisei essa matéria e posso te explicar detalhadamente os pontos principais, simular cenários ou direcionar a melhor conduta prática. Como prefere começar?`;
+        responseText = `A análise técnica sobre a matéria demonstra conformidade com as diretrizes corporativas vigentes, alinhando eficiência operacional, mitigação de riscos e integridade de processos.`;
       }
     }
     tokensUsed = Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + 80;
   }
 
-  // Sanitize message text: remove raw URLs, markdown link URLs and redundant trailing sources blocks
+  // Sanitize assistant response: Decode HTML, strip tags, links, robotic intros and generic support outros
   if (responseText) {
-    // Replace markdown links [Text](http...) with just Text
+    // 1. Decode HTML entities and strip HTML tags
+    responseText = responseText
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&nbsp;/g, " ")
+      .replace(/<[^>]*>/g, " ");
+
+    // 2. Strip markdown links [Text](http...) with just Text
     responseText = responseText.replace(/\[([^\]]+)\]\((?:https?:\/\/[^\)]+)\)/g, "$1");
-    // Remove raw markdown reference lines like *Referência:* http... or *Fonte:* http...
+
+    // 3. Remove raw markdown reference lines like *Referência:* http... or *Fonte:* http...
     responseText = responseText.replace(/(?:\*|_)?(?:Referência|Fonte|Link|URL|Source)s?(?:\*|_)?:\s*(?:https?:\/\/\S+|`https?:\/\/\S+`)/gi, "");
-    // Remove trailing "### Fontes Consultadas" or "## Fontes" sections as they are rendered in the UI component
+
+    // 4. Remove trailing "### Fontes Consultadas" or "## Fontes" sections
     responseText = responseText.replace(/(?:#{1,4}\s*(?:Fontes Consultadas|Fontes Pesquisadas|Referências|Links Úteis)[\s\S]*)$/i, "");
-    // Remove standalone raw URLs (http/https) from text
-    responseText = responseText.replace(/(https?:\/\/[^\s\)]+)/g, "");
-    // Clean up excessive blank lines
-    responseText = responseText.replace(/\n{3,}/g, "\n\n").trim();
+
+    // 5. Remove standalone raw URLs (http/https)
+    responseText = responseText.replace(/https?:\/\/\S+/g, "");
+
+    // 6. Strip robotic narrative intros (Fim das muletas textuais)
+    responseText = responseText
+      .replace(/^(?:Apurando|Analisando|Verificando|Pesquisando)\s+as\s+informa[cç][oõ]es\s+mais\s+recentes\s+(?:na\s+web\s+|na\s+internet\s+|na\s+rede\s+)?(?:sobre\s+esse\s+tema,?\s*|sobre\s+o\s+assunto,?\s*)?(?:verifiquei\s+que\s+|constatei\s+que\s+)?/gi, "")
+      .replace(/^(?:Fiz|Realizei)\s+uma\s+(?:pesquisa|busca|varredura)\s+(?:na\s+web|na\s+internet|na\s+rede)\s+e\s+(?:encontrei|verifiquei|apurou-se)\s+(?:que\s+)?/gi, "")
+      .replace(/^(?:Aqui\s+est[aã]o\s+os\s+resultados\s+(?:da\s+pesquisa|da\s+busca|apurados)[^:.\n]*[:.\n]*)/gi, "")
+      .replace(/^(?:Pesquisei|Consultei)\s+esse\s+assunto\s+(?:na\s+rede|na\s+internet|em\s+tempo\s+real)[^.\n]*\.\s*/gi, "")
+      .replace(/^(?:Com\s+base\s+na\s+minha\s+pesquisa\s+(?:na\s+web|na\s+internet)|Com\s+base\s+nos\s+resultados\s+da\s+pesquisa)[^:,\n]*[,\.:\n]\s*/gi, "");
+
+    // 7. Strip generic support outros (Fim das muletas textuais)
+    responseText = responseText
+      .replace(/(?:Se\s+(?:voc[eê]\s+)?(?:quiser|precisar|desejar)[^.\n]*(?:posso|me\s+fale|[eé]\s+s[oó]\s+me|avise)[^.\n]*\.?)\s*$/gi, "")
+      .replace(/(?:Deseja\s+que\s+eu\s+(?:aprofunde|analise|prepare|estruture|detalhe)[^?\n]*\?)\s*$/gi, "")
+      .replace(/(?:Como\s+posso\s+(?:te\s+)?apoiar\s+(?:agora\s+)?no\s+desdobramento[^?\n]*\?)\s*$/gi, "")
+      .replace(/(?:Como\s+posso\s+(?:te\s+)?ajudar\s+(?:mais\s+)?(?:com\s+isso|nessa\s+demanda)?\?)\s*$/gi, "")
+      .replace(/(?:Como\s+prefere\s+(?:come[cç]ar|prosseguir|avan[cç]ar)\?)\s*$/gi, "")
+      .replace(/(?:O\s+que\s+gostaria\s+de\s+fazer\s+agora\?)\s*$/gi, "");
+
+    // 8. Strip trailing cut-off ellipsis or broken snippet fragments
+    responseText = responseText.replace(/\s*\.{2,}\s*$/, "").trim();
+
+    // 9. Clean up excessive blank lines & spaces
+    responseText = responseText.replace(/[ \t]+/g, " ");
+    responseText = responseText.replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
   }
 
   // Check for event_json or json block in responseText
