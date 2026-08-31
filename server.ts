@@ -619,7 +619,12 @@ app.post(["/api/ai/chat", "/api/gemini/chat", "/api/ollama/chat"], async (req, r
     systemInstruction: customSystemInstruction,
   } = req.body;
 
-  const wantsWebSearch = Boolean(isWebSearchEnabled || webSearchEnabled);
+  const isSearchQuery =
+    Boolean(isWebSearchEnabled || webSearchEnabled) ||
+    /pesquis|busc|not[ií]cia|internet|web|novidade|[uú]ltim|quem [eé]|o que [eé]|como est[aá]|qual [eé]|cota[cç][aã]o|mercado|hoje|atual|tempo|previs[aã]o|governo|lei|stj|stf|receita|d[oó]lar|bitcoin|a[cç][oõ]es|tecnologia/i.test(
+      message
+    );
+  const wantsWebSearch = isSearchQuery;
 
   if (!message || typeof message !== "string") {
     return res.status(400).json({ error: "Mensagem obrigatória" });
@@ -768,6 +773,159 @@ DIRETRIZES DO PERFIL: GERAL & MULTISSETORIAL (TEMPERATURA 0.3)
     return clean;
   }
 
+// Comprehensive Multi-Source Real Web Search Fetcher
+async function fetchRealWebSources(
+  query: string,
+  isJunkFilter: (snippet: string, title?: string, url?: string) => boolean,
+  cleanSnippetFn: (raw: string) => string
+): Promise<Array<{ title: string; url: string; snippet: string; publishedDate?: string }>> {
+  const sources: Array<{ title: string; url: string; snippet: string; publishedDate?: string }> = [];
+  const cleanQuery = query
+    .replace(/^jarvis,?\s*/i, "")
+    .replace(/^por favor,?\s*/i, "")
+    .replace(/^(pesquise|pesquisar|procure|busque|buscar)\s*(sobre|as|os|na internet|na web)?\s*/i, "")
+    .trim() || query;
+
+  // 1. Try SearXNG if configured
+  if (process.env.SEARXNG_URL) {
+    try {
+      const searxngBase = process.env.SEARXNG_URL.replace(/\/+$/, "");
+      const res = await fetch(`${searxngBase}/search?q=${encodeURIComponent(cleanQuery)}&format=json`, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        for (const r of data.results || []) {
+          const rawSnippet = r.content || r.snippet || "";
+          const rawTitle = r.title || r.url || "Fonte Web";
+          const rawUrl = r.url || "";
+          if (rawSnippet && !isJunkFilter(rawSnippet, rawTitle, rawUrl)) {
+            const clean = cleanSnippetFn(rawSnippet);
+            if (clean.length >= 20) {
+              sources.push({
+                title: rawTitle,
+                url: rawUrl,
+                snippet: clean,
+                publishedDate: r.publishedDate || r.published_date,
+              });
+              if (sources.length >= 5) return sources;
+            }
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn("[SearXNG warning]:", e.message);
+    }
+  }
+
+  // 2. Fetch from Google News RSS (Real-Time Current Events & News in pt-BR)
+  try {
+    const googleNewsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cleanQuery)}&hl=pt-BR&gl=BR&ceid=BR:pt-419`;
+    const newsRes = await fetch(googleNewsUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; OmniJarvis/4.2; +https://omnisas.io)" },
+      signal: AbortSignal.timeout(3500),
+    });
+    if (newsRes.ok) {
+      const xmlText = await newsRes.text();
+      const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+      let match;
+      while ((match = itemRegex.exec(xmlText)) !== null && sources.length < 5) {
+        const itemContent = match[1];
+        const titleMatch = /<title>([\s\S]*?)<\/title>/i.exec(itemContent);
+        const linkMatch = /<link>([\s\S]*?)<\/link>/i.exec(itemContent);
+        const pubDateMatch = /<pubDate>([\s\S]*?)<\/pubDate>/i.exec(itemContent);
+        const descMatch = /<description>([\s\S]*?)<\/description>/i.exec(itemContent);
+
+        if (titleMatch && linkMatch) {
+          const rawTitle = titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").replace(/<[^>]+>/g, "").trim();
+          const rawLink = linkMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").trim();
+          let rawDesc = descMatch
+            ? descMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").replace(/<[^>]+>/g, "").trim()
+            : rawTitle;
+          if (rawDesc.length > 250) rawDesc = rawDesc.substring(0, 250) + "...";
+
+          if (rawTitle && !sources.some((s) => s.title === rawTitle)) {
+            sources.push({
+              title: rawTitle,
+              url: rawLink,
+              snippet: cleanSnippetFn(rawDesc) || rawTitle,
+              publishedDate: pubDateMatch
+                ? new Date(pubDateMatch[1]).toLocaleDateString("pt-BR")
+                : new Date().toLocaleDateString("pt-BR"),
+            });
+          }
+        }
+      }
+    }
+  } catch (newsErr: any) {
+    console.warn("[Google News RSS warning]:", newsErr.message);
+  }
+
+  // 3. DuckDuckGo Instant API
+  if (sources.length < 3) {
+    try {
+      const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQuery)}&format=json&no_html=1&skip_disambig=1`;
+      const ddgRes = await fetch(ddgUrl, { signal: AbortSignal.timeout(3000) });
+      if (ddgRes.ok) {
+        const ddgData = (await ddgRes.json()) as any;
+        if (ddgData.AbstractText && ddgData.AbstractURL) {
+          sources.push({
+            title: ddgData.Heading || ddgData.AbstractSource || "DuckDuckGo Instant Knowledge",
+            url: ddgData.AbstractURL,
+            snippet: cleanSnippetFn(ddgData.AbstractText),
+            publishedDate: new Date().toLocaleDateString("pt-BR"),
+          });
+        }
+        if (Array.isArray(ddgData.RelatedTopics)) {
+          for (const topic of ddgData.RelatedTopics) {
+            if (topic.Text && topic.FirstURL && sources.length < 5) {
+              sources.push({
+                title: topic.Text.split(" - ")[0] || "Referência da Web",
+                url: topic.FirstURL,
+                snippet: cleanSnippetFn(topic.Text),
+                publishedDate: new Date().toLocaleDateString("pt-BR"),
+              });
+            }
+          }
+        }
+      }
+    } catch (ddgErr: any) {
+      console.warn("[DuckDuckGo warning]:", ddgErr.message);
+    }
+  }
+
+  // 4. Wikipedia PT OpenSearch API
+  if (sources.length < 3) {
+    try {
+      const wikiUrl = `https://pt.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(cleanQuery)}&limit=3&namespace=0&format=json`;
+      const wikiRes = await fetch(wikiUrl, { signal: AbortSignal.timeout(3000) });
+      if (wikiRes.ok) {
+        const wikiData = (await wikiRes.json()) as any;
+        if (Array.isArray(wikiData) && wikiData.length >= 4) {
+          const titles = wikiData[1] || [];
+          const descs = wikiData[2] || [];
+          const urls = wikiData[3] || [];
+          for (let i = 0; i < titles.length && sources.length < 5; i++) {
+            if (titles[i] && urls[i] && descs[i]) {
+              sources.push({
+                title: titles[i],
+                url: urls[i],
+                snippet: cleanSnippetFn(descs[i]),
+                publishedDate: new Date().toLocaleDateString("pt-BR"),
+              });
+            }
+          }
+        }
+      }
+    } catch (wikiErr: any) {
+      console.warn("[Wikipedia warning]:", wikiErr.message);
+    }
+  }
+
+  return sources;
+}
+
   if (wantsWebSearch) {
     const webQuota = getWebSearchQuotaInfo(userId, tenantId);
     if (webQuota.allowed) {
@@ -775,63 +933,19 @@ DIRETRIZES DO PERFIL: GERAL & MULTISSETORIAL (TEMPERATURA 0.3)
       userWebSearchDailyUsage[userId].count += 1;
       webSearchUsed = true;
 
-      // Real SearXNG Search Request (with anti-junk filtering and graceful fallback)
-      const searxngBase = process.env.SEARXNG_URL || "http://localhost:8080";
+      // Real Multi-Source Web Search Fetch (SearXNG, Google News RSS, DuckDuckGo, Wikipedia)
       try {
-        const searxngUrl = `${searxngBase.replace(/\/+$/, "")}/search?q=${encodeURIComponent(message)}&format=json`;
-        const searxngRes = await fetch(searxngUrl, {
-          method: "GET",
-          headers: {
-            "Accept": "application/json",
-          },
-          signal: AbortSignal.timeout(3500),
-        });
-
-        if (searxngRes.ok) {
-          const searxngData = (await searxngRes.json()) as {
-            results?: Array<{
-              title?: string;
-              url?: string;
-              content?: string;
-              snippet?: string;
-              publishedDate?: string;
-              published_date?: string;
-            }>;
-          };
-
-          const results = searxngData.results || [];
-          for (const r of results) {
-            const rawSnippet = r.content || r.snippet || "";
-            const rawTitle = r.title || r.url || "Fonte Web";
-            const rawUrl = r.url || "";
-
-            // Discard junk snippets (cookies, TOS, generic social media)
-            if (isJunkWebSnippet(rawSnippet, rawTitle, rawUrl)) {
-              continue;
-            }
-
-            const cleaned = cleanWebSnippet(rawSnippet);
-            if (!cleaned || cleaned.length < 25) {
-              continue;
-            }
-
-            webSearchSources.push({
-              title: rawTitle,
-              url: rawUrl,
-              snippet: cleaned,
-              publishedDate: r.publishedDate || r.published_date || undefined,
-            });
-
-            if (webSearchSources.length >= 5) break;
+        const realSources = await fetchRealWebSources(message, isJunkWebSnippet, cleanWebSnippet);
+        for (const s of realSources) {
+          if (!webSearchSources.some((item) => item.url === s.url || item.title === s.title)) {
+            webSearchSources.push(s);
           }
-        } else {
-          console.warn(`SearXNG returned status ${searxngRes.status}`);
         }
-      } catch (searxngErr: any) {
-        console.warn("[SearXNG Unavailable - applying intelligent real-time fallback]", searxngErr.message);
+      } catch (searchFetchErr: any) {
+        console.warn("[Real Web Search Fetch Error]:", searchFetchErr.message);
       }
 
-      // If SearXNG returned 0 non-junk results or was offline, provide contextual factual search sources
+      // Fallback Contextual Sources if search returned 0 items
       if (webSearchSources.length === 0) {
         const lowerMsg = message.toLowerCase();
         if (/stj|superior tribunal de justi[cç]a|jurisprud[eê]ncia|decis[aã]o|s[uú]mula|recurso especial/i.test(lowerMsg)) {
@@ -1172,7 +1286,7 @@ ${webSearchContext}
     }
   }
 
-  // 2. Try Gemini (@google/genai)
+  // 2. Try Gemini (@google/genai) with Search Grounding
   if (!ollamaSuccess) {
     const gemini = getGeminiClient();
     if (gemini) {
@@ -1181,6 +1295,9 @@ ${webSearchContext}
           role: h.sender === "user" ? "user" : "model",
           parts: [{ text: h.text }],
         }));
+
+        // Enable Google Search Grounding if web search is desired or detected
+        const searchTools = wantsWebSearch ? [{ googleSearch: {} }] : undefined;
 
         const response = await gemini.models.generateContent({
           model: "gemini-2.5-flash",
@@ -1194,12 +1311,35 @@ ${webSearchContext}
           config: {
             temperature: dynamicTemp,
             maxOutputTokens: dynamicMaxTokens,
+            ...(searchTools ? { tools: searchTools } : {}),
           },
         });
 
         responseText = response.text || "";
         tokensUsed = Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + 120;
         engineUsed = "gemini_2.5_flash";
+
+        // Extract Google Search Grounding metadata chunks
+        const groundingChunks = (response.candidates?.[0] as any)?.groundingMetadata?.groundingChunks;
+        if (groundingChunks && Array.isArray(groundingChunks)) {
+          for (const chunk of groundingChunks) {
+            if (chunk.web?.uri) {
+              const uri = chunk.web.uri;
+              const title = chunk.web.title || uri;
+              if (!webSearchSources.some((s) => s.url === uri)) {
+                webSearchSources.push({
+                  title,
+                  url: uri,
+                  snippet: title,
+                  publishedDate: new Date().toLocaleDateString("pt-BR"),
+                });
+              }
+            }
+          }
+          if (webSearchSources.length > 0) {
+            webSearchUsed = true;
+          }
+        }
       } catch (geminiErr: any) {
         console.warn("[Gemini API Fallback]", geminiErr.message);
       }
@@ -1345,43 +1485,48 @@ ${ragSources.map((s) => `* **${s.docName}:** "${s.snippet}"`).join("\n\n")}
 
 Em termos práticos, essas diretrizes são de aplicação mandatória na organização. Se precisar que eu elabore um plano de ação específico ou aprofunde algum ponto dessas políticas, é só me falar!`;
     } else if (webSearchUsed && webSearchSources.length > 0) {
-      const lowerMsg = message.toLowerCase();
-      if (/stj|superior tribunal de justi[cç]a|jurisprud[eê]ncia|decis[aã]o|tribunal/i.test(lowerMsg)) {
-        responseText = `O Superior Tribunal de Justiça (STJ) julgou recentemente matérias voltadas ao direito tributário, empresarial e bancário de impacto direto nas operações corporativas.
+      const topSources = webSearchSources.slice(0, 4);
+      const searchItemsFormatted = topSources
+        .map(
+          (s) =>
+            `### 🔹 ${s.title}\n${s.snippet ? `> ${s.snippet}\n` : ""}${s.publishedDate ? `*Data/Publicação:* ${s.publishedDate}` : ""}`
+        )
+        .join("\n\n");
 
-Dentre os principais destaques, a jurisprudência recente consolida a aplicação estrita da boa-fé objetiva e da segurança jurídica nas relações contratuais, bem como a fixação de teses em recursos repetitivos que delimitam o alcance da responsabilidade civil objetiva e a modulação dos efeitos em litígios fiscais.
+      const cleanTopic = message
+        .replace(/^jarvis,?\s*/i, "")
+        .replace(/^pesquise\s*(sobre)?\s*/i, "")
+        .replace(/^busque\s*(sobre)?\s*/i, "")
+        .trim();
 
-Em termos práticos para a nossa empresa, esses entendimentos reforçam a necessidade de manter a rastreabilidade probatória formal de todos os atos e alinhar os contratos previamente com as diretrizes do compliance preventivo. Deseja que eu elabore uma análise detalhada sobre o impacto dessas decisões em algum contrato ou operação específica?`;
-      } else if (/receita|tribut|imposto|pis|cofins|irpj|csll|simples/i.test(lowerMsg)) {
-        responseText = `Com base nas atualizações normativas e posicionamentos recentes da Receita Federal do Brasil (RFB) e do Conselho Administrativo de Recursos Fiscais (CARF), os principais pontos de atenção concentram-se na apuração de créditos tributários e na conformidade das obrigações acessórias.
+      responseText = `## 🌐 Resultados da Pesquisa em Tempo Real na Web
+**Tema Pesquisado:** "${cleanTopic}" | **Status:** ✅ Informações atualizadas obtidas da rede
 
-As diretrizes vigentes reforçam a necessidade de correta escrituração digital via SPED Fiscal e estrita observância das normas de competência para o reconhecimento de receitas e despesas.
+---
 
-Para a nossa gestão financeira, a recomendação prioritária é conciliar os recolhimentos tempestivamente para mitigar contingências fiscais. Quer que eu faça uma simulação de memória de cálculo com as alíquotas oficiais aplicáveis à nossa realidade?`;
-      } else if (/varejo|consumidor|cdc|vendas|loja|atendimento/i.test(lowerMsg)) {
-        responseText = `Analisando o panorama mais recente do mercado de varejo e as orientações dos órgãos de proteção ao consumidor, o foco prioritário das operações de alta performance está na agilidade do atendimento e na eliminação de atritos nos processos de pós-venda.
+${searchItemsFormatted}
 
-As boas práticas de mercado e o Código de Defesa do Consumidor (CDC) destacam a importância de manter fluxos claros de troca, logística reversa simplificada e comunicação transparente sobre prazos e garantias legais.
+---
 
-Isso não apenas assegura conformidade jurídica imediata, como também eleva significativamente a fidelização e a conversão de clientes. Como posso te apoiar agora no desdobramento dessa estratégia para o nosso catálogo?`;
-      } else {
-        responseText = `Realizei a varredura em tempo real nas fontes mais recentes de mercado e consolidei os principais direcionamentos aplicáveis à sua solicitação:
-
-As análises apontam para uma rápida consolidação de padrões de eficiência operacional, automação de fluxos e conformidade regulatória nas empresas líderes de mercado. Na prática, a orientação estratégica recomendada é integrar esses referenciais ao planejamento corporativo contínuo, assegurando agilidade nas decisões e mitigação preventiva de riscos.
-
-Se desejar que eu elabore um plano de ação estruturado com base nesses pontos para a nossa empresa, é só me falar!`;
-      }
+💡 **Síntese Jarvis:** Com base nos dados mais recentes apurados na web, as fontes acima confirmam o panorama atual sobre a sua pesquisa. Deseja que eu analise um aspecto específico com mais profundidade ou relacione essas informações com as diretrizes internas da nossa empresa?`;
     } else {
-      if (effectiveProfile === "Jurídico & Compliance" || effectiveProfile === "juridico") {
-        responseText = `Analisando a sua consulta sob a ótica jurídica e de conformidade, a situação demanda atenção principalmente quanto à formalização documental e à gestão preventiva de riscos.
+      const lowerClean = message.toLowerCase().trim();
+      const isGreetingOnly = /^(ol[aá]|oi|bom dia|boa tarde|boa noite|opa|fala jarvis|e a[ií])[\s!.]*$/i.test(lowerClean);
+
+      if (isGreetingOnly) {
+        responseText = `Olá, **${userName}**! Sou o Jarvis, seu assistente inteligente integrado ao painel corporativo da ${tenant?.name || 'Nexus Enterprise'}.
+
+Estou conectado à internet em tempo real e à base de conhecimento corporativa. Você pode me pedir pesquisas na web, agendamento de reuniões, análises financeiras e jurídicas ou consulta de documentos. O que gostaria de fazer agora?`;
+      } else if (effectiveProfile === "Jurídico & Compliance" || effectiveProfile === "juridico") {
+        responseText = `Analisando a sua consulta sob a ótica jurídica e de conformidade:
 
 Segundo o **Art. 421 e 422 do Código Civil**, as relações contratuais devem sempre observar os princípios da função social e da boa-fé objetiva. Além disso, de acordo com o **Art. 7º e 46 da LGPD (Lei nº 13.709/2018)**, qualquer tratamento de dados decorrente dessa operação precisa de base legal clara e medidas de segurança técnicas e administrativas comprovadas.
 
-Se houver relação de consumo envolvida, vale lembrar que o **Art. 18 do CDC** estabelece responsabilidade solidária por vícios do produto ou serviço.
+Se houver relação de consumo envolvida, o **Art. 18 do CDC** estabelece responsabilidade solidária por vícios do produto ou serviço.
 
 Minha recomendação prática é mantermos o registro probatório formal de todas as tratativas para afastar qualquer alegação de má-fé ou passivo futuro. Deseja que eu elabore uma cláusula protetiva ou prepare uma minuta contratual com esses termos?`;
       } else if (effectiveProfile === "Contabilidade & Finanças" || effectiveProfile === "contabilidade") {
-        responseText = `Avaliando a sua questão sob a perspectiva contábil e fiscal, o ponto central é o enquadramento correto da operação e o impacto nos tributos correntes.
+        responseText = `Avaliando a sua questão sob a perspectiva contábil e fiscal:
 
 Conforme as diretrizes da **Instrução Normativa RFB nº 2.121/2022** e os pronunciamentos técnicos do **CPC 00 e CPC 30**, as receitas e obrigações devem ser reconhecidas pelo regime de competência, garantindo conciliação precisa com a escrituração digital.
 
@@ -1391,20 +1536,19 @@ Conforme as diretrizes da **Instrução Normativa RFB nº 2.121/2022** e os pron
 | **IRPJ & CSLL** | 15% + 10% adicional / 9% | Apuração trimestral ou anual |
 | **SPED Fiscal / EFD** | Obrigação Acessória | Transmissão digital tempestiva |
 
-O recolhimento deve ser apurado via DARF dentro dos prazos oficiais da Receita Federal para evitar encargos moratórios. Se você quiser, posso simular a memória de cálculo com os valores exatos da operação.`;
+O recolhimento deve ser apurado via DARF dentro dos prazos oficiais da Receita Federal para evitar encargos moratórios. Posso simular a memória de cálculo para a sua demanda.`;
       } else if (effectiveProfile === "Varejo & Atendimento" || effectiveProfile === "varejo") {
-        responseText = `Olá, **${userName}**! Tudo bem? Estou aqui para ajudar você a resolver isso da forma mais rápida e acolhedora possível!
+        responseText = `Olá, **${userName}**! 
 
-Nosso foco é sempre garantir a satisfação total do cliente e facilitar o processo comercial:
-* **Soluções do Catálogo:** Temos itens de pronta entrega com garantia estendida e suporte dedicado.
-* **Política de Troca e Devolução:** Conforme o **Art. 49 do Código de Defesa do Consumidor (CDC)**, o cliente tem até 7 dias corridos para arrependimento em compras online, com reembolso integral imediato. Para qualquer defeito aparente, o prazo é de 30 a 90 dias conforme o **Art. 18 do CDC**.
-* **Logística Reversa Sem Custo:** O código de postagem é emitido de forma automatizada sem custo para o cliente.
+* **Diretrizes de Atendimento:** Foco na agilidade e resolução em primeiro contato (FCR).
+* **Política de Troca e Devolução:** Conforme o **Art. 49 do Código de Defesa do Consumidor (CDC)**, o cliente tem até 7 dias corridos para arrependimento em compras online com reembolso integral.
+* **Garantia Legal:** De 30 a 90 dias conforme o **Art. 18 do CDC**.
 
-Como posso te apoiar agora para finalizarmos essa solicitação ou prepararmos o atendimento ao cliente?`;
+Como posso te apoiar agora no desdobramento dessa solicitação?`;
       } else {
-        responseText = `Olá, **${userName}**! Sou o assistente corporativo da ${tenant?.name || 'Nexus Enterprise'}.
+        responseText = `Compreendi a sua mensagem, **${userName}**. 
 
-Estou pronto para analisar documentos da nossa base de conhecimento, agendar compromissos na agenda interna, emitir diagnósticos operacionais ou notificar colaboradores da equipe. O que você precisa resolver hoje?`;
+Analisei sua solicitação a respeito de "${message.slice(0, 60)}" no ecossistema da ${tenant?.name || 'Nexus Enterprise'}. Para avançarmos, posso efetuar uma busca complementar na web, cruzar esses dados com a nossa base RAG interna ou estruturar um fluxo de ação para a equipe. Como prefere prosseguir?`;
       }
     }
     tokensUsed = Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + 80;

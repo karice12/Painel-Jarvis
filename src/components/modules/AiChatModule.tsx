@@ -323,6 +323,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       isVoiceDialogModeRef.current = true;
       setAutoPlayAudio(true);
       localStorage.setItem("omnijarvis_auto_play_audio", "true");
+      setIsWebSearchEnabled(true); // Automatically activate live web search for voice assistant dialog
       setVoiceDialogStatus("listening");
       stopNeuralAudio();
       startVoiceRecognition();
@@ -637,22 +638,13 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       });
     }
 
-    // Detect if user is asking for news or web research to automatically engage Web Search
+    // Detect if user is asking for news, web research or using voice dialog to automatically engage Web Search
     const lower = sanitizedText.toLowerCase();
     const isNewsOrSearchIntent =
-      lower.includes("notícia") ||
-      lower.includes("noticia") ||
-      lower.includes("notícias") ||
-      lower.includes("noticias") ||
-      lower.includes("pesquise") ||
-      lower.includes("pesquisar") ||
-      lower.includes("procure na internet") ||
-      lower.includes("busque na web") ||
-      lower.includes("buscar na web") ||
-      lower.includes("últimas novidades") ||
-      lower.includes("ultimas novidades") ||
-      lower.includes("pesquisa sobre") ||
-      lower.includes("novidades de hoje");
+      isVoiceDialogModeRef.current ||
+      /pesquis|busc|not[ií]cia|novidad|internet|web|quem [eé]|o que [eé]|qual [eé]|como est[aá]|cota[cç][aã]o|mercado|hoje|atual|tempo|previs[aã]o|governo|lei|stj|stf|receita|d[oó]lar|bitcoin/i.test(
+        lower
+      );
 
     const effectiveWebSearch = isWebSearchEnabled || isNewsOrSearchIntent;
 
