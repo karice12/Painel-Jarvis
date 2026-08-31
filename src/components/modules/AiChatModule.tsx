@@ -863,6 +863,8 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                   ? "Voz: Antônio"
                   : selectedVoice === "pt-BR-FranciscaNeural"
                   ? "Voz: Francisca"
+                  : selectedVoice === "pt-BR-ThalitaNeural"
+                  ? "Voz: Thalita"
                   : "Voz Neural"}
               </span>
               <ChevronDown className="w-3 h-3 text-slate-400" />
@@ -950,6 +952,26 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                         <div className="text-[10px] text-slate-400">Tom acolhedor / atendimento</div>
                       </div>
                       {selectedVoice === "pt-BR-FranciscaNeural" && <Check className="w-3.5 h-3.5 text-purple-600" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedVoice("pt-BR-ThalitaNeural");
+                        localStorage.setItem("omnijarvis_neural_voice", "pt-BR-ThalitaNeural");
+                      }}
+                      className={cn(
+                        "w-full text-left px-2.5 py-1.5 rounded-lg border text-xs flex items-center justify-between transition-all cursor-pointer",
+                        selectedVoice === "pt-BR-ThalitaNeural"
+                          ? "bg-purple-50 dark:bg-purple-950/50 border-purple-500 text-purple-700 dark:text-purple-300 font-semibold"
+                          : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                      )}
+                    >
+                      <div>
+                        <div className="font-medium">✨ Thalita Neural</div>
+                        <div className="text-[10px] text-slate-400">Tom moderno / comunicação</div>
+                      </div>
+                      {selectedVoice === "pt-BR-ThalitaNeural" && <Check className="w-3.5 h-3.5 text-purple-600" />}
                     </button>
                   </div>
                 </div>

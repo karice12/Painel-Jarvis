@@ -1695,109 +1695,8 @@ Estou pronto para analisar documentos da nossa base de conhecimento, agendar com
   });
 });
 
-// 4.5 Neural Text-to-Speech (node-edge-tts pt-BR-AntonioNeural & pt-BR-FranciscaNeural)
-import fs from "fs";
-import os from "os";
-
-function sanitizeTextForSpeech(raw: string): string {
-  if (!raw || typeof raw !== "string") return "";
-  let clean = raw;
-
-  // 1. Remove blocos de código e blocos json/eventos
-  clean = clean.replace(/```[\s\S]*?```/g, "");
-  clean = clean.replace(/`([^`]+)`/g, "$1");
-
-  // 2. Remove imagens markdown
-  clean = clean.replace(/!\[[^\]]*\]\([^\)]*\)/g, "");
-
-  // 3. Converte links markdown mantendo apenas o texto da âncora: [STJ](https://...) -> STJ
-  clean = clean.replace(/\[([^\]]+)\]\([^\)]*\)/g, "$1");
-
-  // 4. Remove URLs avulsas
-  clean = clean.replace(/https?:\/\/\S+/g, "");
-
-  // 5. Remove marcações de formatação Markdown (*, #, _, ~, >, |, [, ], (, ), {, }) e aspas
-  clean = clean.replace(/[\*#_~>|\[\]\(\)\{\}\"\'\«\»\“”]/g, " ");
-
-  // 6. Converte o símbolo & para ' e ' para fala natural e compatibilidade XML SSML
-  clean = clean.replace(/\s*&\s*/g, " e ");
-
-  // 7. Remove tags HTML e caracteres XML inseguros (<, >)
-  clean = clean.replace(/[<>]/g, "");
-
-  // 8. Remove emojis e ícones especiais
-  clean = clean.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}]/gu, "");
-
-  // 9. Normaliza espaços e quebras de linha
-  clean = clean.replace(/\s+/g, " ").trim();
-
-  // Limite de caracteres para fala fluida (evita sobrecarga)
-  if (clean.length > 1500) {
-    clean = clean.slice(0, 1500);
-    const lastPunct = Math.max(clean.lastIndexOf("."), clean.lastIndexOf("!"), clean.lastIndexOf("?"));
-    if (lastPunct > 300) {
-      clean = clean.slice(0, lastPunct + 1);
-    }
-  }
-
-  return clean;
-}
-
-async function synthesizeNeuralAudioBuffer(text: string, voice: string): Promise<Buffer> {
-  const clean = sanitizeTextForSpeech(text) || "Olá, tudo bem? Estou à disposição para ajudar.";
-
-  // Tentativa primária usando node-edge-tts
-  try {
-    const { EdgeTTS } = await import("node-edge-tts");
-    const tts = new EdgeTTS({
-      voice: voice,
-      lang: "pt-BR",
-      outputFormat: "audio-24khz-48kbitrate-mono-mp3",
-    });
-
-    const tmpPath = path.join(os.tmpdir(), `tts_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.mp3`);
-    await tts.ttsPromise(clean, tmpPath);
-    const buf = await fs.promises.readFile(tmpPath);
-    await fs.promises.unlink(tmpPath).catch(() => {});
-    if (buf && buf.length > 0) {
-      return buf;
-    }
-  } catch (primaryErr) {
-    console.warn("[TTS Primary Error, tentando fallback msedge-tts]:", primaryErr);
-  }
-
-  // Tentativa secundária usando msedge-tts caso haja variação de rede
-  try {
-    const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-
-    return await new Promise<Buffer>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error("Timeout ao sintetizar áudio neural"));
-      }, 15000);
-
-      try {
-        const { audioStream } = tts.toStream(clean);
-        const chunks: Buffer[] = [];
-        audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
-        audioStream.on("end", () => {
-          clearTimeout(timeout);
-          resolve(Buffer.concat(chunks));
-        });
-        audioStream.on("error", (err: any) => {
-          clearTimeout(timeout);
-          reject(err);
-        });
-      } catch (e) {
-        clearTimeout(timeout);
-        reject(e);
-      }
-    });
-  } catch (secondaryErr: any) {
-    throw new Error(`Falha na síntese de voz neural: ${secondaryErr?.message || "Erro desconhecido"}`);
-  }
-}
+// 4.5 Neural Text-to-Speech (Microsoft Edge Neural pt-BR-AntonioNeural, pt-BR-FranciscaNeural, pt-BR-ThalitaNeural)
+import { synthesizeNeuralSpeech, sanitizeTextForNeuralTTS } from "./server/edgeTts.js";
 
 app.all("/api/tts", async (req, res) => {
   try {
@@ -1810,11 +1709,13 @@ app.all("/api/tts", async (req, res) => {
       return res.status(400).json({ error: "Texto não fornecido para síntese" });
     }
 
-    // Seleção de voz neural:
-    // pt-BR-AntonioNeural: Corporativo, Jurídico, Contabilidade, Executivo
-    // pt-BR-FranciscaNeural: Varejo, Atendimento, SAC, Acolhedor
+    // Seleção inteligente da voz neural brasileira:
+    // pt-BR-AntonioNeural: Corporativo, Jurídico, Contabilidade, Executivo (Voz masculina madura e séria)
+    // pt-BR-FranciscaNeural: Varejo, Atendimento, SAC, Acolhedor (Voz feminina empática e clara)
+    // pt-BR-ThalitaNeural: Comunicação, Marketing, Geral (Voz feminina moderna e dinâmica)
     let selectedVoice = "pt-BR-AntonioNeural";
     const checkTarget = `${requestedVoice} ${sector} ${profile}`.toLowerCase();
+
     if (
       requestedVoice.includes("Francisca") ||
       requestedVoice.includes("francisca") ||
@@ -1824,15 +1725,26 @@ app.all("/api/tts", async (req, res) => {
       checkTarget.includes("sac")
     ) {
       selectedVoice = "pt-BR-FranciscaNeural";
+    } else if (
+      requestedVoice.includes("Thalita") ||
+      requestedVoice.includes("thalita") ||
+      checkTarget.includes("marketing") ||
+      checkTarget.includes("comunicação")
+    ) {
+      selectedVoice = "pt-BR-ThalitaNeural";
     } else if (requestedVoice && requestedVoice.startsWith("pt-BR-")) {
       selectedVoice = requestedVoice;
     }
 
-    const audioBuffer = await synthesizeNeuralAudioBuffer(rawText, selectedVoice);
+    const audioBuffer = await synthesizeNeuralSpeech(rawText, {
+      voice: selectedVoice,
+      rate: "+0%",
+      pitch: "+0Hz",
+    });
 
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Length", audioBuffer.length);
-    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Cache-Control", "public, max-age=86400");
     res.setHeader("X-Voice-Used", selectedVoice);
 
     return res.end(audioBuffer);
