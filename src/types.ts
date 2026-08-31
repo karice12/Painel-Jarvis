@@ -26,6 +26,12 @@ export interface User {
   createdAt: string;
 }
 
+export type MainProfileType =
+  | 'Jurídico & Compliance'
+  | 'Contabilidade & Finanças'
+  | 'Varejo & Atendimento'
+  | 'Geral';
+
 export interface TenantConfig {
   id: string;
   name: string;
@@ -46,9 +52,11 @@ export interface TenantConfig {
   aiModelName?: string;
   sectors?: string[];
   aiSettings?: {
+    mainProfile?: MainProfileType | string;
     temperature?: number;
     maxOutputTokens?: number;
     enableRagAutoSearch?: boolean;
+    customSystemPrompt?: string;
   };
 }
 

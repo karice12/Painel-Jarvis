@@ -334,28 +334,31 @@ export async function saveAgendaEventToDb(
   if (!isSupabaseConfigured) return false;
 
   try {
-    const { error } = await supabase.from("agenda_events").insert({
-      id: event.id,
-      tenant_id: tenantId,
-      user_id: userId || event.userId,
-      user_email: userEmail || event.userEmail,
-      created_by: userId || event.userId,
-      title: event.title,
-      description: event.description,
-      date: event.date,
-      start_time: event.startTime,
-      end_time: event.endTime,
-      category: event.category,
-      sector: event.sector,
-      participants: event.participants,
-      meet_url: event.meetUrl,
-      is_ai_generated: event.isAiGenerated || false,
-      created_at: new Date().toISOString(),
-    });
+    const { error } = await supabase.from("agenda_events").upsert(
+      {
+        id: event.id,
+        tenant_id: tenantId,
+        user_id: userId || event.userId,
+        user_email: userEmail || event.userEmail,
+        created_by: userId || event.userId,
+        title: event.title,
+        description: event.description,
+        date: event.date,
+        start_time: event.startTime,
+        end_time: event.endTime,
+        category: event.category,
+        sector: event.sector,
+        participants: event.participants,
+        meet_url: event.meetUrl,
+        is_ai_generated: event.isAiGenerated || false,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
 
     return !error;
   } catch (err) {
-    console.warn("Could not insert event into Supabase:", err);
+    console.warn("Could not insert/upsert event into Supabase:", err);
     return false;
   }
 }

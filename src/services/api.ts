@@ -26,6 +26,8 @@ export interface SendChatMessageParams {
   userEmail?: string;
   tenantId?: string;
   token?: string;
+  mainProfile?: string;
+  temperature?: number;
   systemInstruction?: string;
   onWebSearchQuotaExceeded?: (quotaInfo: WebSearchQuotaInfo) => void;
 }
@@ -180,6 +182,8 @@ export async function sendChatMessage(params: SendChatMessageParams): Promise<Ch
     userEmail = "usuario@nexus.com.br",
     tenantId = "tenant_omni_01",
     token,
+    mainProfile,
+    temperature,
     systemInstruction,
     onWebSearchQuotaExceeded,
   } = params;
@@ -221,6 +225,8 @@ export async function sendChatMessage(params: SendChatMessageParams): Promise<Ch
       tenantId,
       userId,
       userEmail,
+      mainProfile,
+      temperature,
       systemInstruction,
     }),
   });

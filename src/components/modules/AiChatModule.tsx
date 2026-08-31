@@ -19,6 +19,9 @@ import {
   Clock,
   ExternalLink,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Link2,
   Info,
   ShieldAlert,
   AlertTriangle,
@@ -29,6 +32,9 @@ import {
   Globe,
   Compass,
   Search,
+  Scale,
+  Calculator,
+  ShoppingBag,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { OpenJarvisMessage, RagCitation, WebSearchQuotaInfo } from "../../types";
@@ -69,6 +75,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -390,6 +397,8 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         userId: user?.id || "usr_master_01",
         userEmail: user?.email || "usuario@nexus.com.br",
         token: token || undefined,
+        mainProfile: tenant?.aiSettings?.mainProfile || "Geral",
+        temperature: tenant?.aiSettings?.temperature,
         systemInstruction: OPENJARVIS_SYSTEM_INSTRUCTION,
         onWebSearchQuotaExceeded: (qInfo) => {
           setWebSearchAlert(
@@ -445,23 +454,8 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         suggestedEvent: data.suggestedEvent,
       }).catch((e) => console.warn("Supabase assistant msg save error:", e));
 
-      // If Jarvis scheduled or suggested an event, ensure it is saved and synced to the Agenda
+      // If Jarvis scheduled or suggested an event, dispatch event notification for instant sync
       if (data.suggestedEvent) {
-        fetch("/api/events", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...data.suggestedEvent,
-            category: "reuniao",
-            type: "reuniao",
-            isAiGenerated: true,
-            userId: user?.id || "usr_master_01",
-            userName: user?.name || "Colaborador",
-            userEmail: user?.email || "colaborador@nexus.com.br",
-            tenantId: tenant?.id || "tenant_omni_01",
-          }),
-        }).catch((e) => console.warn("Auto event save error:", e));
-
         window.dispatchEvent(
           new CustomEvent("omnijarvis_event_created", {
             detail: {
@@ -631,14 +625,31 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
             <Bot className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold text-sm text-slate-900 dark:text-white">
                 OmniJarvis IA
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold border border-blue-500/20 flex items-center gap-1">
-                <Sparkles className="w-3 h-3" />
-                Assistente Corporativo
-              </span>
+              {tenant?.aiSettings?.mainProfile === "Jurídico & Compliance" ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-500/30 flex items-center gap-1">
+                  <Scale className="w-3 h-3 text-indigo-500" />
+                  Jurídico (Parecer & Leis)
+                </span>
+              ) : tenant?.aiSettings?.mainProfile === "Contabilidade & Finanças" ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/30 flex items-center gap-1">
+                  <Calculator className="w-3 h-3 text-emerald-500" />
+                  Contabilidade & RFB
+                </span>
+              ) : tenant?.aiSettings?.mainProfile === "Varejo & Atendimento" ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold border border-amber-500/30 flex items-center gap-1">
+                  <ShoppingBag className="w-3 h-3 text-amber-500" />
+                  Varejo & CDC
+                </span>
+              ) : (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold border border-blue-500/20 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  Assistente Corporativo
+                </span>
+              )}
               {isWebSearchEnabled && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-500/20 flex items-center gap-1 animate-pulse">
                   <Globe className="w-3 h-3" />
@@ -974,82 +985,169 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                   </div>
                 </div>
 
-                {/* ProJarvis Web Search Sources Panel */}
-                {msg.webSearchSources && msg.webSearchSources.length > 0 && (
-                  <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-800/40 text-xs space-y-2">
-                    <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-800 dark:text-indigo-300">
-                      <span className="flex items-center gap-1.5">
-                        <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                        Fontes da Pesquisa Web (ProJarvis - {msg.webSearchSources.length} referências)
-                      </span>
-                      <span className="text-[10px] text-indigo-500 font-medium">Tempo Real</span>
-                    </div>
+                {/* Expandable "Fontes Consultadas" Panel (RAG + Web Search) */}
+                {((msg.webSearchSources && msg.webSearchSources.length > 0) ||
+                  (msg.ragSources && msg.ragSources.length > 0)) && (() => {
+                  const isExpanded = expandedSources[msg.id] !== false;
+                  const webCount = msg.webSearchSources?.length || 0;
+                  const ragCount = msg.ragSources?.length || 0;
+                  const totalCount = webCount + ragCount;
 
-                    <div className="grid grid-cols-1 gap-1.5">
-                      {msg.webSearchSources.map((source, idx) => (
-                        <div
-                          key={idx}
-                          className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/50 text-[11px]"
-                        >
-                          <div className="flex items-center justify-between font-medium text-slate-900 dark:text-slate-100">
-                            <a
-                              href={source.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline truncate max-w-[280px]"
-                            >
-                              <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                              {source.title}
-                            </a>
-                            {source.publishedDate && (
-                              <span className="text-[10px] text-slate-400">
-                                {source.publishedDate}
-                              </span>
-                            )}
+                  return (
+                    <div
+                      id={`sources-panel-${msg.id}`}
+                      className="rounded-2xl border border-slate-200/90 dark:border-slate-700/80 bg-white/95 dark:bg-slate-900/90 shadow-xs overflow-hidden transition-all text-xs"
+                    >
+                      {/* Header Trigger to Expand/Collapse */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedSources((prev) => ({
+                            ...prev,
+                            [msg.id]: !isExpanded,
+                          }));
+                        }}
+                        className="w-full px-3.5 py-2.5 flex items-center justify-between gap-2 bg-slate-50/80 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer select-none"
+                      >
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
+                            <BookOpen className="w-3.5 h-3.5 text-blue-500" />
+                            <span>Fontes Consultadas</span>
                           </div>
-                          <p className="text-slate-500 dark:text-slate-400 mt-1 italic line-clamp-2">
-                            "{source.snippet}"
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
-                {/* RAG Sources Citations Panel */}
-                {msg.ragSources && msg.ragSources.length > 0 && (
-                  <div className="p-3 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40 text-xs space-y-2">
-                    <div className="flex items-center justify-between text-[11px] font-semibold text-blue-700 dark:text-blue-300">
-                      <span className="flex items-center gap-1.5">
-                        <BookOpen className="w-3.5 h-3.5" />
-                        Fontes Consultadas na Base de Conhecimento ({msg.ragSources.length})
-                      </span>
-                      <span className="text-[10px] text-blue-500">RAG Documentos</span>
-                    </div>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300">
+                            {totalCount} {totalCount === 1 ? "fonte" : "fontes"}
+                          </span>
 
-                    <div className="grid grid-cols-1 gap-1.5">
-                      {msg.ragSources.map((source, idx) => (
-                        <div
-                          key={idx}
-                          className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-blue-100 dark:border-blue-900/50 text-[11px]"
-                        >
-                          <div className="flex items-center justify-between font-medium text-slate-900 dark:text-slate-100">
-                            <span className="flex items-center gap-1 truncate max-w-[200px]">
-                              <FileText className="w-3 h-3 text-blue-500 flex-shrink-0" />
-                              {source.docName}
+                          {ragCount > 0 && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center gap-1">
+                              <FileText className="w-3 h-3" />
+                              {ragCount} {ragCount === 1 ? "documento RAG" : "documentos RAG"}
                             </span>
-                            <span className="text-[10px] text-slate-400">
-                              Setor: {source.sector}
+                          )}
+
+                          {webCount > 0 && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
+                              <Globe className="w-3 h-3" />
+                              {webCount} {webCount === 1 ? "link web" : "links web"}
                             </span>
-                          </div>
-                          <p className="text-slate-500 dark:text-slate-400 mt-1 italic line-clamp-2">
-                            "{source.snippet}"
-                          </p>
+                          )}
                         </div>
-                      ))}
+
+                        <div className="flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 flex-shrink-0">
+                          <span>{isExpanded ? "Ocultar fontes" : "Ver fontes"}</span>
+                          {isExpanded ? (
+                            <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                          )}
+                        </div>
+                      </button>
+
+                      {/* Expanded Content Details */}
+                      {isExpanded && (
+                        <div className="p-3 space-y-3 divide-y divide-slate-100 dark:divide-slate-800">
+                          {/* Documentos da Base de Conhecimento (RAG) */}
+                          {msg.ragSources && msg.ragSources.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[11px] font-semibold text-blue-700 dark:text-blue-300">
+                                <span className="flex items-center gap-1.5">
+                                  <FileText className="w-3.5 h-3.5 text-blue-500" />
+                                  Base de Conhecimento Interna ({msg.ragSources.length})
+                                </span>
+                                <span className="text-[10px] text-blue-500 font-medium">Indexado / Vetorizado</span>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-2">
+                                {msg.ragSources.map((source, idx) => (
+                                  <div
+                                    key={`rag-${idx}`}
+                                    className="p-2.5 rounded-xl bg-blue-50/40 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-900/40 text-[11px] space-y-1.5"
+                                  >
+                                    <div className="flex items-center justify-between gap-2 flex-wrap font-medium">
+                                      <div className="flex items-center gap-1.5 text-slate-900 dark:text-slate-100 font-semibold truncate max-w-[280px]">
+                                        <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                                        <span className="truncate">{source.docName}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium">
+                                          Setor: {source.sector}
+                                        </span>
+                                        {source.similarity && (
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-semibold">
+                                            {Math.round(source.similarity * 100)}% match
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <p className="text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-slate-900/70 p-2 rounded-lg border border-blue-100/60 dark:border-blue-950/60 leading-relaxed italic">
+                                      "{source.snippet}"
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Páginas & URLs Pesquisadas na Web (ProJarvis Web) */}
+                          {msg.webSearchSources && msg.webSearchSources.length > 0 && (
+                            <div className={cn("space-y-2", msg.ragSources && msg.ragSources.length > 0 ? "pt-3" : "")}>
+                              <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
+                                <span className="flex items-center gap-1.5">
+                                  <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                  Pesquisa Web em Tempo Real ({msg.webSearchSources.length})
+                                </span>
+                                <span className="text-[10px] text-indigo-500 font-medium">ProJarvis SearXNG</span>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-2">
+                                {msg.webSearchSources.map((source, idx) => (
+                                  <div
+                                    key={`web-${idx}`}
+                                    className="p-2.5 rounded-xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200/60 dark:border-indigo-900/40 text-[11px] space-y-1.5"
+                                  >
+                                    <div className="flex items-center justify-between gap-2 flex-wrap font-medium">
+                                      <a
+                                        href={source.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-bold hover:underline truncate max-w-[320px]"
+                                        title={source.url}
+                                      >
+                                        <ExternalLink className="w-3.5 h-3.5 flex-shrink-0 text-indigo-500" />
+                                        <span className="truncate">{source.title || source.url}</span>
+                                      </a>
+                                      {source.publishedDate && (
+                                        <span className="text-[10px] text-slate-400 font-medium">
+                                          {source.publishedDate}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <a
+                                      href={source.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-indigo-500 truncate font-mono"
+                                    >
+                                      <Link2 className="w-3 h-3 flex-shrink-0" />
+                                      <span className="truncate">{source.url}</span>
+                                    </a>
+
+                                    <p className="text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-slate-900/70 p-2 rounded-lg border border-indigo-100/60 dark:border-indigo-950/60 leading-relaxed italic">
+                                      "{source.snippet}"
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* AI Detected Calendar Event Card */}
                 {msg.suggestedEvent && (
@@ -1085,21 +1183,6 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                       id="btn-add-event-from-chat"
                       type="button"
                       onClick={() => {
-                        fetch("/api/events", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            ...msg.suggestedEvent,
-                            category: "reuniao",
-                            type: "reuniao",
-                            isAiGenerated: true,
-                            userId: user?.id || "usr_master_01",
-                            userName: user?.name || "Colaborador",
-                            userEmail: user?.email || "colaborador@nexus.com.br",
-                            tenantId: tenant?.id || "tenant_omni_01",
-                          }),
-                        }).catch(() => {});
-
                         window.dispatchEvent(
                           new CustomEvent("omnijarvis_event_created", {
                             detail: {

@@ -27,6 +27,11 @@ import {
   Image as ImageIcon,
   Bot,
   Zap,
+  Scale,
+  Calculator,
+  ShoppingBag,
+  Brain,
+  FileCheck,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { TenantConfig, Role, User } from "../../types";
@@ -71,6 +76,18 @@ export const SettingsModule: React.FC = () => {
   }, [tenant]);
 
   // AI Parameters state
+  const [mainProfile, setMainProfile] = useState<string>(() => {
+    if (tenant?.aiSettings?.mainProfile) return tenant.aiSettings.mainProfile;
+    try {
+      const saved = localStorage.getItem("omni_ai_params");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.mainProfile) return parsed.mainProfile;
+      }
+    } catch {}
+    return "Geral";
+  });
+
   const [temperature, setTemperature] = useState<number>(() => {
     if (typeof tenant?.aiSettings?.temperature === "number") return tenant.aiSettings.temperature;
     try {
@@ -82,6 +99,19 @@ export const SettingsModule: React.FC = () => {
     } catch {}
     return 0.3;
   });
+
+  const handleProfileChange = (newProfile: string) => {
+    setMainProfile(newProfile);
+    if (newProfile === "Jurídico & Compliance") {
+      setTemperature(0.1);
+    } else if (newProfile === "Contabilidade & Finanças") {
+      setTemperature(0.1);
+    } else if (newProfile === "Varejo & Atendimento") {
+      setTemperature(0.5);
+    } else if (newProfile === "Geral") {
+      setTemperature(0.3);
+    }
+  };
 
   const [maxOutputTokens, setMaxOutputTokens] = useState<number>(() => {
     if (typeof tenant?.aiSettings?.maxOutputTokens === "number") return tenant.aiSettings.maxOutputTokens;
@@ -233,6 +263,7 @@ export const SettingsModule: React.FC = () => {
     setIsAiSaving(true);
 
     const aiSettings = {
+      mainProfile,
       temperature,
       maxOutputTokens,
       enableRagAutoSearch,
@@ -245,6 +276,7 @@ export const SettingsModule: React.FC = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tenantId: tenant?.id || "tenant_omni_01",
+          mainProfile,
           temperature,
           maxOutputTokens,
           enableRagAutoSearch,
@@ -829,6 +861,133 @@ export const SettingsModule: React.FC = () => {
             </div>
 
             <div className="space-y-6">
+              {/* Perfil de Atuação Principal Selection */}
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      {mainProfile === "Jurídico & Compliance" ? (
+                        <Scale className="w-4 h-4 text-indigo-500" />
+                      ) : mainProfile === "Contabilidade & Finanças" ? (
+                        <Calculator className="w-4 h-4 text-emerald-500" />
+                      ) : mainProfile === "Varejo & Atendimento" ? (
+                        <ShoppingBag className="w-4 h-4 text-amber-500" />
+                      ) : (
+                        <Brain className="w-4 h-4 text-blue-500" />
+                      )}
+                      Perfil de Atuação Principal
+                    </label>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Define a persona operacional, o formato das respostas e as regras de compliance e citações aplicadas pelo assistente.
+                    </p>
+                  </div>
+
+                  <span
+                    className={cn(
+                      "text-[11px] font-semibold px-2.5 py-1 rounded-lg border flex items-center gap-1",
+                      mainProfile === "Jurídico & Compliance"
+                        ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30"
+                        : mainProfile === "Contabilidade & Finanças"
+                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                        : mainProfile === "Varejo & Atendimento"
+                        ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                        : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
+                    )}
+                  >
+                    <FileCheck className="w-3 h-3" />
+                    {mainProfile === "Jurídico & Compliance"
+                      ? "Parecer Jurídico Obrigatório (Temp 0.1)"
+                      : mainProfile === "Contabilidade & Finanças"
+                      ? "Normas RFB / CPC & Tributos (Temp 0.1)"
+                      : mainProfile === "Varejo & Atendimento"
+                      ? "Catálogo & CDC / Atendimento (Temp 0.5)"
+                      : "Corporativo Geral (Temp 0.3)"}
+                  </span>
+                </div>
+
+                <select
+                  value={mainProfile}
+                  onChange={(e) => handleProfileChange(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="Jurídico & Compliance">Jurídico & Compliance</option>
+                  <option value="Contabilidade & Finanças">Contabilidade & Finanças</option>
+                  <option value="Varejo & Atendimento">Varejo & Atendimento</option>
+                  <option value="Geral">Geral</option>
+                </select>
+
+                {/* Profile Active Directives Details Card */}
+                <div
+                  className={cn(
+                    "p-3 rounded-lg border text-xs leading-relaxed transition-all",
+                    mainProfile === "Jurídico & Compliance"
+                      ? "bg-indigo-50/60 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800/40 text-indigo-900 dark:text-indigo-200"
+                      : mainProfile === "Contabilidade & Finanças"
+                      ? "bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-900 dark:text-emerald-200"
+                      : mainProfile === "Varejo & Atendimento"
+                      ? "bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/40 text-amber-900 dark:text-amber-200"
+                      : "bg-blue-50/60 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/40 text-blue-900 dark:text-blue-200"
+                  )}
+                >
+                  {mainProfile === "Jurídico & Compliance" && (
+                    <div className="space-y-1">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <Scale className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        Diretrizes Ativas: Jurídico & Compliance (Temperatura: 0.1)
+                      </div>
+                      <p className="text-[11px] opacity-90">
+                        • <strong>Formato de Parecer Obrigatório:</strong> Toda resposta é estruturada em <em>Fatos, Base Legal, Jurisprudência e Conclusão</em>.
+                      </p>
+                      <p className="text-[11px] opacity-90">
+                        • <strong>Citação Mandatória:</strong> É expressamente proibido responder sem citar artigos específicos de lei (CC, CPC, CLT, CF/88, LGPD).
+                      </p>
+                    </div>
+                  )}
+
+                  {mainProfile === "Contabilidade & Finanças" && (
+                    <div className="space-y-1">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <Calculator className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        Diretrizes Ativas: Contabilidade & Finanças (Temperatura: 0.1)
+                      </div>
+                      <p className="text-[11px] opacity-90">
+                        • <strong>Cruzamento Regulatório:</strong> Confronta obrigatoriamente com normas da Receita Federal do Brasil (RFB) e pronunciamentos do CPC/IFRS.
+                      </p>
+                      <p className="text-[11px] opacity-90">
+                        • <strong>Alíquotas Oficiais:</strong> Aplicação e detalhamento de tabelas de impostos (ICMS, IPI, PIS, COFINS, IRPJ, CSLL, Simples Nacional).
+                      </p>
+                    </div>
+                  )}
+
+                  {mainProfile === "Varejo & Atendimento" && (
+                    <div className="space-y-1">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <ShoppingBag className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        Diretrizes Ativas: Varejo & Atendimento (Temperatura: 0.5)
+                      </div>
+                      <p className="text-[11px] opacity-90">
+                        • <strong>Tom Humanizado & Consultivo:</strong> Comunicação empática, acolhedora, comercial e focada na satisfação e conversão do cliente.
+                      </p>
+                      <p className="text-[11px] opacity-90">
+                        • <strong>Catálogo & CDC:</strong> Foco nas características de produtos e aplicação precisa de políticas de troca e devolução (Código de Defesa do Consumidor).
+                      </p>
+                    </div>
+                  )}
+
+                  {mainProfile === "Geral" && (
+                    <div className="space-y-1">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <Brain className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        Diretrizes Ativas: Perfil Geral & Multissetorial (Temperatura: 0.3)
+                      </div>
+                      <p className="text-[11px] opacity-90">
+                        • Assistente executivo flexível para demandas multidisciplinares, pesquisa em documentos RAG, resumos e sínteses corporativas balanceadas.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Temperature Slider */}
               <div className="space-y-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80">
                 <div className="flex items-center justify-between flex-wrap gap-2">

@@ -615,6 +615,7 @@ app.post(["/api/ai/chat", "/api/gemini/chat", "/api/ollama/chat"], async (req, r
     userRole = "user",
     userName = "Colaborador",
     userId = "usr_master_01",
+    mainProfile: requestedProfile,
     systemInstruction: customSystemInstruction,
   } = req.body;
 
@@ -628,6 +629,57 @@ app.post(["/api/ai/chat", "/api/gemini/chat", "/api/ollama/chat"], async (req, r
   const tenant = DB.tenants.find((t) => t.id === tenantId);
   if (tenant) {
     tenant.currentRequests += 1;
+  }
+
+  // Determine Active Profile for AI Engine
+  const effectiveProfile =
+    requestedProfile ||
+    req.body?.aiSettings?.mainProfile ||
+    tenant?.aiSettings?.mainProfile ||
+    "Geral";
+
+  // Build Profile-Specific Directives
+  let profileDirectives = "";
+  if (effectiveProfile === "Jurídico & Compliance" || effectiveProfile === "juridico") {
+    profileDirectives = `
+====================================================================
+DIRETRIZES MANDATÓRIAS DO PERFIL: JURÍDICO & COMPLIANCE (TEMPERATURA 0.1)
+====================================================================
+- VOCÊ ATUA COMO CONSULTOR JURÍDICO E AUDITOR DE COMPLIANCE CORPORATIVO.
+- FORMATO MANDATÓRIO DE PARECER: TODA resposta deve ser estruturada rigorosamente nas 4 seções:
+  1. 📋 **I. DOS FATOS / CONSULTA**: Breve contextualização e síntese fática da dúvida ou demanda.
+  2. ⚖️ **II. DA BASE LEGAL**: Indicação explícita, detalhada e fundamentada dos diplomas legais aplicáveis.
+  3. 🏛️ **III. DA JURISPRUDÊNCIA & DOUTRINA**: Entendimentos consolidados dos Tribunais Superiores (STF, STJ, TST, TRFs) e precedentes.
+  4. 📑 **IV. DA CONCLUSÃO & PARECER**: Parecer conclusivo, recomendações preventivas de mitigação de passivos e próximos passos.
+- REGRA INEGOCIÁVEL DE CITAÇÃO DE ARTIGOS DE LEI: É EXPRESSAMENTE PROIBIDO emitir respostas sem citar artigos, parágrafos, incisos ou súmulas de diplomas legais vigentes (ex.: Código Civil - CC, CPC, CLT, CF/88, LGPD - Lei 13.709/18, CDC, Leis Tributárias ou Especiais). Respostas sem citação de artigos são estritamente proibidas.`;
+  } else if (effectiveProfile === "Contabilidade & Finanças" || effectiveProfile === "contabilidade") {
+    profileDirectives = `
+====================================================================
+DIRETRIZES MANDATÓRIAS DO PERFIL: CONTABILIDADE & FINANÇAS (TEMPERATURA 0.1)
+====================================================================
+- VOCÊ ATUA COMO AUDITOR CONTÁBIL, CONSULTOR TRIBUTÁRIO E CONTROLLER FINANCEIRO CORPORATIVO.
+- CRUZAMENTO OBRIGATÓRIO COM NORMAS REGULATÓRIAS E TRIBUTÁRIAS:
+  1. Confrontar obrigatoriamente toda consulta com as Instruções Normativas (IN) e Soluções de Consulta (COSIT) da **Receita Federal do Brasil (RFB)**.
+  2. Aplicar e citar expressamente os Pronunciamentos Técnicos do **Comitê de Pronunciamentos Contábeis (CPC)** e normas internacionais **IFRS** (ex.: CPC 00, CPC 25, CPC 30, etc.).
+  3. Aplicar a Tabela Oficial de Alíquotas e Regimes de Tributação vigentes (Simples Nacional, Lucro Presumido, Lucro Real), detalhando os tributos incidentes (ICMS, IPI, ISS, PIS, COFINS, IRPJ, CSLL, encargos previdenciários e trabalhistas).
+- MEMÓRIA DE CÁLCULO E CONCILIAÇÃO: Forneça sempre detalhamento numérico das bases de cálculo, memórias de cálculo, obrigações acessórias (SPED, DCTF, EFD-Reinf, ECF) e cronogramas de recolhimento oficial (DARF/GPS/DAS).`;
+  } else if (effectiveProfile === "Varejo & Atendimento" || effectiveProfile === "varejo") {
+    profileDirectives = `
+====================================================================
+DIRETRIZES MANDATÓRIAS DO PERFIL: VAREJO & ATENDIMENTO (TEMPERATURA 0.5)
+====================================================================
+- VOCÊ ATUA COMO ESPECIALISTA EM VAREJO, EXPERIÊNCIA DO CLIENTE (CX), SAC E OPERAÇÕES COMERCIAIS.
+- TOM DE VOZ: Adote tom acolhedor, amigável, empático, consultivo e focado no encantamento, retenção e satisfação do cliente.
+- CATÁLOGO, VENDAS E POLÍTICAS DE TROCA/DEVOLUÇÃO:
+  1. Apresentação atrativa e valorização dos itens do catálogo corporativo, diferenciais, benefícios, soluções de dúvidas e recomendações personalizadas.
+  2. Aplicação transparente, acolhedora e precisa das políticas de troca, devolução e garantia da empresa, alinhadas aos direitos do consumidor (**Código de Defesa do Consumidor - CDC - Lei 8.078/90**, ex.: prazo de 7 dias para arrependimento no e-commerce - art. 49, e 30/90 dias para vícios aparentes - art. 18).
+  3. Forneça scripts de atendimento práticos, resolutivos e humanizados para SAC, chat e pós-venda.`;
+  } else {
+    profileDirectives = `
+====================================================================
+DIRETRIZES DO PERFIL: GERAL & MULTISSETORIAL (TEMPERATURA 0.3)
+====================================================================
+- Atuação como consultor executivo sênior e assistente corporativo versátil para análise de documentos, alinhamento estratégico, agenda e governança.`;
   }
 
   // Web Search Quota Evaluation & Real SearXNG Integration
@@ -861,28 +913,59 @@ Seu propósito é atuar como um consultor sênior especializado com total acesso
 
   const systemInstruction = `${basePrompt}
 
+${profileDirectives}
+
 ${liveSystemContext}
 
 ====================================================================
 CONTEXTO DINÂMICO & ESTADO DAS INTEGRAÇÕES NESTA CONSULTA
 ====================================================================
 - Usuário Atual: ${userName} (Setor: ${userSector}, Cargo: ${userRole})
+- Perfil Ativo OpenJarvis: ${effectiveProfile}
 - Base de Conhecimento RAG: ${useKnowledgeBase ? `ATIVADA (${ragSources.length} fontes internas relevantes localizadas).` : `DESATIVADA.`}
 - Pesquisa Web em Tempo Real: ${webSearchUsed ? `ATIVADA (${webSearchSources.length} fontes externas atualizadas recuperadas).` : `DESATIVADA.`}
 ${ragContext}
 ${webSearchContext}
 `;
 
-  // Multi-engine generation: Try Ollama -> Try Gemini -> Try Knowledge Synthesis fallback
+  // Multi-engine generation: Try Ollama (Qwen 3.5 / Llama) -> Try Gemini -> Try Knowledge Synthesis fallback
   let responseText = "";
   let engineUsed = "openjarvis_rag";
   let tokensUsed = 300;
   let suggestedEvent: any = null;
   let dispatchedNotification: any = null;
 
-  // 1. Try Ollama if explicitly configured
+  // Calculate dynamic temperature and maxTokens based on active profile and settings
+  const profileDefaultTemp =
+    effectiveProfile === "Jurídico & Compliance" || effectiveProfile === "juridico"
+      ? 0.1
+      : effectiveProfile === "Contabilidade & Finanças" || effectiveProfile === "contabilidade"
+      ? 0.1
+      : effectiveProfile === "Varejo & Atendimento" || effectiveProfile === "varejo"
+      ? 0.5
+      : 0.3;
+
+  const dynamicTemp =
+    typeof req.body?.temperature === "number"
+      ? req.body.temperature
+      : typeof req.body?.aiSettings?.temperature === "number"
+      ? req.body.aiSettings.temperature
+      : typeof tenant?.aiSettings?.temperature === "number"
+      ? tenant.aiSettings.temperature
+      : profileDefaultTemp;
+
+  const dynamicMaxTokens =
+    typeof req.body?.maxOutputTokens === "number"
+      ? req.body.maxOutputTokens
+      : typeof req.body?.aiSettings?.maxOutputTokens === "number"
+      ? req.body.aiSettings.maxOutputTokens
+      : typeof tenant?.aiSettings?.maxOutputTokens === "number"
+      ? tenant.aiSettings.maxOutputTokens
+      : 2048;
+
+  // 1. Try Ollama (Qwen 3.5 / Llama) if configured
   const ollamaBase = process.env.OLLAMA_URL || "http://localhost:11434";
-  const ollamaModel = process.env.OLLAMA_MODEL || "llama3";
+  const ollamaModel = process.env.OLLAMA_MODEL || "qwen3.5:latest";
   let ollamaSuccess = false;
 
   if (process.env.OLLAMA_URL) {
@@ -903,6 +986,10 @@ ${webSearchContext}
         body: JSON.stringify({
           model: ollamaModel,
           messages: ollamaMessages,
+          options: {
+            temperature: dynamicTemp,
+            num_predict: dynamicMaxTokens,
+          },
           stream: false,
         }),
         signal: AbortSignal.timeout(6000),
@@ -929,25 +1016,6 @@ ${webSearchContext}
           role: h.sender === "user" ? "user" : "model",
           parts: [{ text: h.text }],
         }));
-
-        // Calculate dynamic temperature and maxTokens from payload or tenant config
-        const dynamicTemp =
-          typeof req.body?.temperature === "number"
-            ? req.body.temperature
-            : typeof req.body?.aiSettings?.temperature === "number"
-            ? req.body.aiSettings.temperature
-            : typeof tenant?.aiSettings?.temperature === "number"
-            ? tenant.aiSettings.temperature
-            : 0.3;
-
-        const dynamicMaxTokens =
-          typeof req.body?.maxOutputTokens === "number"
-            ? req.body.maxOutputTokens
-            : typeof req.body?.aiSettings?.maxOutputTokens === "number"
-            ? req.body.aiSettings.maxOutputTokens
-            : typeof tenant?.aiSettings?.maxOutputTokens === "number"
-            ? tenant.aiSettings.maxOutputTokens
-            : 2048;
 
         const response = await gemini.models.generateContent({
           model: "gemini-2.5-flash",
@@ -1143,7 +1211,71 @@ ${w.snippet}
 ### 4. Fontes Consultadas
 ${webSearchSources.slice(0, 5).map((w, idx) => `* [${idx + 1}] **${w.title}** - \`${w.url}\``).join("\n")}`;
     } else {
-      responseText = `${greeting}Sou o assistente inteligente corporativo **OpenJarvis v4.2** da ${tenant?.name || 'Nexus Enterprise'}.\n\nEstou à sua disposição para analisar documentos com RAG, agendar compromissos na agenda interna, notificar colaboradores ou fornecer diagnósticos executivos sobre a saúde da empresa para o Master Admin. Como posso ajudar você agora?`;
+      if (effectiveProfile === "Jurídico & Compliance" || effectiveProfile === "juridico") {
+        responseText = `## ⚖️ Parecer Jurídico & Compliance
+**Interessado:** ${userName} | **Setor:** ${userSector} | **Data:** ${todayIso}
+
+---
+
+### I. DOS FATOS / CONSULTA
+Diante da consulta formulada ("*${message}*"), realizamos a análise técnica de conformidade legal, governança corporativa e mitigação de passivos.
+
+### II. DA BASE LEGAL
+- **Constituição da República Federativa do Brasil de 1988:** Art. 5º, incisos X, XXII e LXXIX (Garantias Fundamentais, Propriedade e Proteção de Dados Pessoais).
+- **Código Civil Brasileiro (Lei nº 10.406/2002):** Arts. 186 e 927 (Responsabilidade Civil), Art. 421 (Função Social do Contrato) e Art. 422 (Princípio da Boa-fé Objetiva).
+- **Código de Processo Civil (Lei nº 13.105/2015):** Art. 373 (Distribuição do Ônus da Prova e Validade Documental Eletrônica).
+- **Lei Geral de Proteção de Dados Pessoais (Lei nº 13.709/2018 - LGPD):** Arts. 6º (Princípios de Segurança e Transparência), 7º (Hipóteses de Tratamento) e 46 (Governança e Medidas Técnicas).
+
+### III. DA JURISPRUDÊNCIA & DOUTRINA
+Conforme entendimento pacificado pelos Tribunais Superiores (STF, STJ e TST), a adoção prévia de protocolos rígidos de auditoria, conformidade regulatória e documentação probatória afasta a presunção de má-fé e mitiga o risco de sanções administrativas ou indenizatórias.
+
+### IV. DA CONCLUSÃO & PARECER
+1. **Parecer Conclusivo Favorável sob Condicionantes:** A operação está respaldada pela legislação pátria, desde que observadas as formalidades documentais.
+2. **Mitigação de Riscos:** Manter registros rastreáveis em conformidade com o Art. 37 da LGPD e guarda de evidências contratuais.
+3. **Próximos Passos:** Submeter as minutas definitivas à rubrica do departamento jurídico antes da assinatura.`;
+      } else if (effectiveProfile === "Contabilidade & Finanças" || effectiveProfile === "contabilidade") {
+        responseText = `## 📊 Relatório Técnico Contábil & Tributário
+**Solicitante:** ${userName} | **Setor:** ${userSector} | **Data:** ${todayIso}
+
+---
+
+### 1. Cruzamento Regulatório & Normas da Receita Federal (RFB)
+- **Instruções Normativas da RFB:** Aplicação das diretrizes da **IN RFB nº 2.121/2022** (Consolidação do PIS/Pasep e da COFINS) e **IN RFB nº 1.700/2017** (Tributação do IRPJ e da CSLL).
+- **Pronunciamentos Técnicos Contábeis (CPC / IFRS):**
+  * **CPC 00 (R2):** Estrutura Conceitual para Relatório Financeiro (Reconhecimento de Ativos e Passivos).
+  * **CPC 25:** Provisões, Passivos Contingentes e Ativos Contingentes.
+  * **CPC 30 (R1):** Reconhecimento de Receitas e Mensuração de Resultados.
+
+### 2. Alíquotas Oficiais & Memória de Cálculo Aplicável
+- **Tributação Federal & Estadual de Referência:**
+  * **PIS/PASEP:** 0,65% (Regime Cumulativo) ou 1,65% (Regime Não-Cumulativo)
+  * **COFINS:** 3,00% (Regime Cumulativo) ou 7,60% (Regime Não-Cumulativo)
+  * **IRPJ:** 15,0% (+ Adicional de 10,0% sobre a parcela do lucro que exceder R$ 20.000,00/mês)
+  * **CSLL:** 9,0% sobre a base ajustada
+  * **ISS / ICMS:** 2,0% a 5,0% (ISS Municipal) / 17,0% a 20,5% (ICMS Estadual conforme UF de destino)
+
+### 3. Obrigações Acessórias & Cronograma de Recolhimento
+- **Escrituração Digital:** Transmissão tempestiva via SPED Fiscal (EFD ICMS/IPI) e SPED Contribuições.
+- **Guias de Recolhimento:** Emissão e conciliação via DARF / DAS dentro dos prazos oficiais da Receita Federal.`;
+      } else if (effectiveProfile === "Varejo & Atendimento" || effectiveProfile === "varejo") {
+        responseText = `## 🛍️ Atendimento Consultivo & Varejo
+Olá, **${userName}**! É um prazer atender você hoje! ✨
+
+Estou aqui para apoiar você e seus clientes com agilidade, empatia e conhecimento completo sobre nosso catálogo e procedimentos comerciais:
+
+### 🌟 Destaques do Catálogo & Benefícios
+- Produtos corporativos e soluções de alta durabilidade com suporte técnico dedicado.
+- Condições comerciais diferenciadas, faturamento flexível e garantia estendida de satisfação.
+
+### 📦 Políticas Claras de Troca & Devolução (Código de Defesa do Consumidor - CDC)
+- **Direito de Arrependimento (Art. 49 do CDC):** Prazo de até **7 (sete) dias corridos** a contar do recebimento para compras fora do estabelecimento comercial (online/telefone), com estorno integral garantido.
+- **Garantia Legal por Vício (Art. 18 do CDC):** Prazo de **30 dias** para produtos não duráveis e **90 dias** para produtos duráveis.
+- **Logística Reversa Facilitada:** Envio de código de postagem sem custos para o cliente e acompanhamento em tempo real até a entrega da nova unidade ou reembolso.
+
+Como posso ajudar você com mais informações sobre nossos produtos ou pedidos agora? Conte comigo! 😊`;
+      } else {
+        responseText = `${greeting}Sou o assistente inteligente corporativo **OpenJarvis v4.2** da ${tenant?.name || 'Nexus Enterprise'}.\n\nEstou à sua disposição para analisar documentos com RAG, agendar compromissos na agenda interna, notificar colaboradores ou fornecer diagnósticos executivos sobre a saúde da empresa para o Master Admin. Como posso ajudar você agora?`;
+      }
     }
     tokensUsed = Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + 80;
   }
@@ -1233,9 +1365,23 @@ ${webSearchSources.slice(0, 5).map((w, idx) => `* [${idx + 1}] **${w.title}** - 
     let evtDate = suggestedEvent.date || todayIso;
     if (evtDate < todayIso) evtDate = todayIso;
 
-    const eventExists = DB.events.some(
-      (e) => e.title === suggestedEvent.title && e.date === evtDate && e.startTime === suggestedEvent.startTime && (e.userId === effectiveUserId || e.userEmail === effectiveUserEmail)
-    );
+    const normalize = (s: string) => (s || "").toLowerCase().replace(/[^\w]/g, "");
+    const suggestedTitleNorm = normalize(suggestedEvent.title);
+    const suggestedStart = suggestedEvent.startTime || "14:00";
+
+    const eventExists = DB.events.some((e) => {
+      const sameTenant = !e.tenantId || e.tenantId === tenantId;
+      const sameUser = (e.userId === effectiveUserId) ||
+                       (effectiveUserEmail && e.userEmail && e.userEmail.toLowerCase() === effectiveUserEmail.toLowerCase());
+      const sameDate = e.date === evtDate;
+      const sameTime = e.startTime === suggestedStart;
+      const titleMatch = normalize(e.title) === suggestedTitleNorm ||
+                         normalize(e.title).includes(suggestedTitleNorm) ||
+                         suggestedTitleNorm.includes(normalize(e.title));
+
+      return sameTenant && sameUser && sameDate && (sameTime || titleMatch);
+    });
+
     if (!eventExists) {
       const participantsList = Array.isArray(suggestedEvent.participants)
         ? Array.from(new Set([userName, effectiveUserEmail, ...suggestedEvent.participants]))
@@ -1245,12 +1391,12 @@ ${webSearchSources.slice(0, 5).map((w, idx) => `* [${idx + 1}] **${w.title}** - 
         id: `evt_ai_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
         title: suggestedEvent.title,
         date: evtDate,
-        startTime: suggestedEvent.startTime || "14:00",
+        startTime: suggestedStart,
         endTime: suggestedEvent.endTime || "15:00",
         category: (suggestedEvent.category as any) || "reuniao",
         sector: suggestedEvent.sector || userSector || "Geral",
         participants: participantsList,
-        description: suggestedEvent.description || `Compromisso agendado automaticamente pelo OpenJarvis para ${userName}`,
+        description: suggestedEvent.description || `Reunião corporativa agendada via OpenJarvis a pedido de ${userName} (${userSector || "Geral"}).`,
         meetUrl: `https://meet.google.com/ai-${Math.random().toString(36).substr(2, 3)}-${Math.random().toString(36).substr(2, 4)}`,
         isAiGenerated: true,
         userId: effectiveUserId,
@@ -1659,11 +1805,30 @@ app.delete("/api/documents/:id", (req, res) => {
   }
 });
 
-// 9. Calendar Events CRUD (com Isolamento por Usuário, Bloqueio de Datas/Horários Passados e Edição)
+// 9. Calendar Events CRUD (com Isolamento por Usuário, Bloqueio de Datas/Horários Passados, Edição e Deduplicação Inteligente)
 app.get(["/api/events", "/api/agenda/events"], (req, res) => {
   const userId = (req.query.userId as string) || (req.headers["x-user-id"] as string);
   const userEmail = (req.query.userEmail as string) || (req.headers["x-user-email"] as string);
   const tenantId = (req.query.tenantId as string) || "tenant_omni_01";
+
+  // In-memory deduplication of DB.events to automatically clean up any duplicates
+  const seenKeys = new Set<string>();
+  const seenIds = new Set<string>();
+  const cleanedEvents: typeof DB.events = [];
+
+  for (const ev of DB.events) {
+    if (!ev || !ev.id) continue;
+    const normTitle = (ev.title || "").toLowerCase().replace(/[^\w]/g, "");
+    const userKey = (ev.userId || ev.userEmail || "anon").toLowerCase();
+    const eventSignature = `${ev.tenantId || "omni"}_${userKey}_${ev.date}_${ev.startTime}_${normTitle}`;
+
+    if (!seenIds.has(ev.id) && !seenKeys.has(eventSignature)) {
+      seenIds.add(ev.id);
+      seenKeys.add(eventSignature);
+      cleanedEvents.push(ev);
+    }
+  }
+  DB.events = cleanedEvents;
 
   // Filter events belonging to tenant
   let list = DB.events.filter((e) => !e.tenantId || e.tenantId === tenantId);
@@ -1741,10 +1906,28 @@ app.post(["/api/events", "/api/agenda/events"], (req, res) => {
   const effectiveUserId = userId || "usr_current";
   const effectiveUserName = userName || "Colaborador";
   const effectiveUserEmail = userEmail || "colaborador@nexus.com.br";
+  const resolvedTitle = title || "Novo Compromisso";
+
+  // 3. Prevenção de Duplicatas: verifica se o usuário já possui um evento idêntico no mesmo dia e horário
+  const normTitle = resolvedTitle.toLowerCase().replace(/[^\w]/g, "");
+  const existingDup = DB.events.find((e) => {
+    const sameTenant = !e.tenantId || e.tenantId === tenantId;
+    const sameUser = (e.userId === effectiveUserId) ||
+                     (effectiveUserEmail && e.userEmail && e.userEmail.toLowerCase() === effectiveUserEmail.toLowerCase());
+    const sameDate = e.date === resolvedDate;
+    const sameTime = e.startTime === resolvedStartTime;
+    const titleMatch = (e.title || "").toLowerCase().replace(/[^\w]/g, "") === normTitle;
+
+    return sameTenant && sameUser && sameDate && (sameTime || titleMatch);
+  });
+
+  if (existingDup) {
+    return res.json({ success: true, event: existingDup, duplicate: true, message: "Compromisso já existente retornado." });
+  }
 
   const newEvent = {
     id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-    title: title || "Novo Compromisso",
+    title: resolvedTitle,
     description: description || "",
     date: resolvedDate,
     startTime: resolvedStartTime,
@@ -1777,6 +1960,35 @@ app.post(["/api/events", "/api/agenda/events"], (req, res) => {
   );
 
   res.json({ success: true, event: newEvent });
+});
+
+// Endpoint de Limpeza de Duplicatas da Agenda
+app.post("/api/events/cleanup-duplicates", (req, res) => {
+  const { tenantId = "tenant_omni_01", userId, userEmail } = req.body;
+
+  const seenKeys = new Set<string>();
+  const seenIds = new Set<string>();
+  const cleaned: typeof DB.events = [];
+  let removedCount = 0;
+
+  for (const ev of DB.events) {
+    if (!ev || !ev.id) continue;
+    const normTitle = (ev.title || "").toLowerCase().replace(/[^\w]/g, "");
+    const userKey = (ev.userId || ev.userEmail || "anon").toLowerCase();
+    const eventSignature = `${ev.tenantId || "omni"}_${userKey}_${ev.date}_${ev.startTime}_${normTitle}`;
+
+    if (!seenIds.has(ev.id) && !seenKeys.has(eventSignature)) {
+      seenIds.add(ev.id);
+      seenKeys.add(eventSignature);
+      cleaned.push(ev);
+    } else {
+      removedCount++;
+    }
+  }
+
+  DB.events = cleaned;
+
+  res.json({ success: true, removedCount, remaining: DB.events.length });
 });
 
 // Editar Compromisso Existente
@@ -2072,11 +2284,12 @@ app.post("/api/tenant/sectors", (req, res) => {
 
 // 11.2 Tenant AI Parameters Update
 app.post("/api/tenant/ai-params", (req, res) => {
-  const { tenantId = "tenant_omni_01", temperature, maxOutputTokens, enableRagAutoSearch, adminUserName } = req.body;
+  const { tenantId = "tenant_omni_01", mainProfile = "Geral", temperature, maxOutputTokens, enableRagAutoSearch, adminUserName } = req.body;
   const tenant = DB.tenants.find((t) => t.id === tenantId) || DB.tenants[0];
 
   tenant.aiSettings = {
-    temperature: typeof temperature === "number" ? temperature : 0.3,
+    mainProfile: mainProfile || "Geral",
+    temperature: typeof temperature === "number" ? temperature : (mainProfile === "Jurídico & Compliance" || mainProfile === "Contabilidade & Finanças" ? 0.1 : mainProfile === "Varejo & Atendimento" ? 0.5 : 0.3),
     maxOutputTokens: typeof maxOutputTokens === "number" ? maxOutputTokens : 2048,
     enableRagAutoSearch: enableRagAutoSearch !== false,
   };
@@ -2087,7 +2300,7 @@ app.post("/api/tenant/ai-params", (req, res) => {
     "admin@workspace.com",
     "master_admin",
     "AI_PARAMS_UPDATED",
-    `Parâmetros do motor OpenJarvis atualizados (Temp: ${tenant.aiSettings.temperature}, Tokens: ${tenant.aiSettings.maxOutputTokens}, RAG Auto: ${tenant.aiSettings.enableRagAutoSearch})`,
+    `Parâmetros do motor OpenJarvis atualizados (Perfil: ${tenant.aiSettings.mainProfile}, Temp: ${tenant.aiSettings.temperature}, Tokens: ${tenant.aiSettings.maxOutputTokens}, RAG Auto: ${tenant.aiSettings.enableRagAutoSearch})`,
     tenant.id,
     "success"
   );
