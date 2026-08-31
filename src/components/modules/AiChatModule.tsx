@@ -73,7 +73,8 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
   // Neural Voice (Edge-TTS) State
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-  const activeBlobUrlRef = useRef<string | null>(null);
+  const audioCacheRef = useRef<Map<string, string>>(new Map());
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [currentSpeakingId, setCurrentSpeakingId] = useState<string | null>(null);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
@@ -215,31 +216,45 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     }
   };
 
-  // Stop Active Neural Audio Playback
+  // Stop Active Neural Audio Playback cleanly without firing false error events
   const stopNeuralAudio = () => {
+    // 1. Abort any pending network request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    // 2. Safely detach listeners and pause audio element
     if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
-      audioPlayerRef.current.src = "";
+      const audio = audioPlayerRef.current;
+      audio.onplay = null;
+      audio.onended = null;
+      audio.onerror = null;
+      audio.onpause = null;
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch {
+        // ignore
+      }
+      audioPlayerRef.current = null;
     }
-    if (activeBlobUrlRef.current) {
-      URL.revokeObjectURL(activeBlobUrlRef.current);
-      activeBlobUrlRef.current = null;
-    }
+
     setIsPlayingAudio(false);
     setCurrentSpeakingId(null);
     setIsAudioLoading(false);
     setAudioLoadingMsgId(null);
   };
 
-  // Playback Neural Speech via /api/tts (Edge-TTS pt-BR-AntonioNeural & pt-BR-FranciscaNeural)
+  // Playback Neural Speech via /api/tts (Microsoft Neural pt-BR-AntonioNeural, pt-BR-FranciscaNeural, pt-BR-ThalitaNeural)
   const handlePlayNeuralAudio = async (text: string, msgId: string) => {
-    // If already playing this message, stop
+    // If clicking on the currently playing message, stop/pause it
     if (isPlayingAudio && currentSpeakingId === msgId) {
       stopNeuralAudio();
       return;
     }
 
+    // Stop any previously playing audio cleanly
     stopNeuralAudio();
 
     setIsAudioLoading(true);
@@ -247,7 +262,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
     try {
       // Determine voice to use:
-      let chosenVoice: string | undefined = undefined;
+      let chosenVoice = "pt-BR-AntonioNeural";
       if (
         selectedVoice === "pt-BR-AntonioNeural" ||
         selectedVoice === "pt-BR-FranciscaNeural" ||
@@ -272,16 +287,29 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         return;
       }
 
-      const blobUrl = await getNeuralSpeechAudioUrl({
-        text: cleanText,
-        voice: chosenVoice,
-        sector: user?.sector,
-        profile: tenant?.aiSettings?.mainProfile,
-        token: token || undefined,
-      });
+      const cacheKey = `${msgId}_${chosenVoice}`;
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
 
-      activeBlobUrlRef.current = blobUrl;
-      const audio = new Audio(blobUrl);
+      let blobUrl = audioCacheRef.current.get(cacheKey);
+
+      if (!blobUrl) {
+        blobUrl = await getNeuralSpeechAudioUrl({
+          text: cleanText,
+          voice: chosenVoice,
+          sector: user?.sector,
+          profile: tenant?.aiSettings?.mainProfile,
+          token: token || undefined,
+          signal: abortController.signal,
+        });
+        audioCacheRef.current.set(cacheKey, blobUrl);
+      }
+
+      if (abortController.signal.aborted) {
+        return;
+      }
+
+      const audio = new Audio();
       audioPlayerRef.current = audio;
 
       audio.onplay = () => {
@@ -294,28 +322,52 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       audio.onended = () => {
         setIsPlayingAudio(false);
         setCurrentSpeakingId(null);
-        if (activeBlobUrlRef.current) {
-          URL.revokeObjectURL(activeBlobUrlRef.current);
-          activeBlobUrlRef.current = null;
-        }
+        audioPlayerRef.current = null;
       };
 
       audio.onerror = (e) => {
-        console.error("Neural audio playback error:", e);
+        // If audio was already discarded by stopNeuralAudio, ignore
+        if (!audioPlayerRef.current || !audio.src) return;
+        console.warn("Neural audio playback event warning:", e);
         stopNeuralAudio();
       };
 
-      await audio.play();
+      audio.src = blobUrl;
+
+      try {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+        }
+      } catch (playErr: any) {
+        if (playErr.name === "AbortError") {
+          // Play request was intentionally paused by user click
+          return;
+        }
+        console.error("Erro ao iniciar áudio neural:", playErr);
+        stopNeuralAudio();
+      }
     } catch (err: any) {
+      if (err.name === "AbortError") {
+        return;
+      }
       console.error("Erro na síntese neural humanizada:", err);
       stopNeuralAudio();
     }
   };
 
-  // Cleanup audio player on unmount
+  // Cleanup audio player and cached blobs on unmount
   useEffect(() => {
     return () => {
       stopNeuralAudio();
+      audioCacheRef.current.forEach((url) => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          // ignore
+        }
+      });
+      audioCacheRef.current.clear();
     };
   }, []);
 

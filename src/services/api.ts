@@ -266,6 +266,7 @@ export async function getNeuralSpeechAudioUrl(params: {
   sector?: string;
   profile?: string;
   token?: string;
+  signal?: AbortSignal;
 }): Promise<string> {
   const response = await fetch("/api/tts", {
     method: "POST",
@@ -279,6 +280,7 @@ export async function getNeuralSpeechAudioUrl(params: {
       sector: params.sector,
       profile: params.profile,
     }),
+    signal: params.signal,
   });
 
   if (!response.ok) {
