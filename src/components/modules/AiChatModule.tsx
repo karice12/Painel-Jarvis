@@ -248,13 +248,19 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     try {
       // Determine voice to use:
       let chosenVoice: string | undefined = undefined;
-      if (selectedVoice === "pt-BR-AntonioNeural" || selectedVoice === "pt-BR-FranciscaNeural") {
+      if (
+        selectedVoice === "pt-BR-AntonioNeural" ||
+        selectedVoice === "pt-BR-FranciscaNeural" ||
+        selectedVoice === "pt-BR-ThalitaNeural"
+      ) {
         chosenVoice = selectedVoice;
       } else {
         // Auto mode based on sector/profile
         const target = `${tenant?.aiSettings?.mainProfile || ""} ${user?.sector || ""}`.toLowerCase();
         if (target.includes("varejo") || target.includes("atendimento") || target.includes("comercial") || target.includes("sac")) {
           chosenVoice = "pt-BR-FranciscaNeural";
+        } else if (target.includes("marketing") || target.includes("comunicação")) {
+          chosenVoice = "pt-BR-ThalitaNeural";
         } else {
           chosenVoice = "pt-BR-AntonioNeural";
         }
@@ -301,33 +307,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
       await audio.play();
     } catch (err: any) {
-      console.warn("Neural TTS request failed, recorrendo à síntese do navegador como fallback:", err);
-      // Fallback gracioso para a síntese nativa do navegador
-      if ("speechSynthesis" in window) {
-        try {
-          window.speechSynthesis.cancel();
-          const utterance = new SpeechSynthesisUtterance(sanitizeMarkdownForTTS(text));
-          utterance.lang = "pt-BR";
-          utterance.rate = 1.05;
-          utterance.onstart = () => {
-            setIsPlayingAudio(true);
-            setCurrentSpeakingId(msgId);
-            setIsAudioLoading(false);
-            setAudioLoadingMsgId(null);
-          };
-          utterance.onend = () => {
-            setIsPlayingAudio(false);
-            setCurrentSpeakingId(null);
-          };
-          utterance.onerror = () => {
-            stopNeuralAudio();
-          };
-          window.speechSynthesis.speak(utterance);
-          return;
-        } catch (speechErr) {
-          console.error("Browser speech synthesis fallback error:", speechErr);
-        }
-      }
+      console.error("Erro na síntese neural humanizada:", err);
       stopNeuralAudio();
     }
   };
@@ -1225,12 +1205,16 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                           {isAudioLoading && audioLoadingMsgId === msg.id ? (
                             <>
                               <Loader2 className="w-3 h-3 animate-spin text-purple-500" />
-                              <span className="text-[11px] text-purple-500">Gerando...</span>
+                              <span className="text-[11px] text-purple-500 font-medium">Sintetizando...</span>
                             </>
                           ) : isPlayingAudio && currentSpeakingId === msg.id ? (
                             <>
-                              <VolumeX className="w-3 h-3 text-rose-500" />
-                              <span className="text-rose-500">Parar</span>
+                              <div className="flex items-center gap-0.5 h-3 px-0.5">
+                                <span className="w-0.5 h-3 bg-purple-500 rounded-full animate-[bounce_0.8s_infinite_100ms]" />
+                                <span className="w-0.5 h-2 bg-purple-500 rounded-full animate-[bounce_0.8s_infinite_300ms]" />
+                                <span className="w-0.5 h-3 bg-purple-500 rounded-full animate-[bounce_0.8s_infinite_200ms]" />
+                              </div>
+                              <span className="text-purple-600 dark:text-purple-400 font-medium">Parar</span>
                             </>
                           ) : (
                             <>
