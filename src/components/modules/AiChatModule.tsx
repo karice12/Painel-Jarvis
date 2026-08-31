@@ -40,7 +40,7 @@ import { useAuth } from "../../context/AuthContext";
 import { OpenJarvisMessage, RagCitation, WebSearchQuotaInfo } from "../../types";
 import { cn, sanitizeInput } from "../../lib/utils";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { getWebSearchQuota, sendChatMessage, getAiUsageStatus } from "../../services/api";
+import { getWebSearchQuota, sendChatMessage, getAiUsageStatus, getNeuralSpeechAudioUrl } from "../../services/api";
 import { getAiChatHistoryFromDb, saveAiChatMessageToDb } from "../../services/supabaseDb";
 import { OPENJARVIS_SYSTEM_INSTRUCTION } from "../../constants/aiInstructions";
 
@@ -70,8 +70,22 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Neural Voice (Edge-TTS) State
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const activeBlobUrlRef = useRef<string | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [currentSpeakingId, setCurrentSpeakingId] = useState<string | null>(null);
+  const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [audioLoadingMsgId, setAudioLoadingMsgId] = useState<string | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState<string>(() => {
+    return localStorage.getItem("omnijarvis_neural_voice") || "auto";
+  });
+  const [autoPlayAudio, setAutoPlayAudio] = useState<boolean>(() => {
+    return localStorage.getItem("omnijarvis_auto_play_audio") === "true";
+  });
+  const [showAudioMenu, setShowAudioMenu] = useState(false);
+
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -201,41 +215,97 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     }
   };
 
-  // Text-to-Speech (TTS)
-  const speakText = (text: string, msgId: string) => {
-    if (!("speechSynthesis" in window)) return;
+  // Stop Active Neural Audio Playback
+  const stopNeuralAudio = () => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current.currentTime = 0;
+      audioPlayerRef.current.src = "";
+    }
+    if (activeBlobUrlRef.current) {
+      URL.revokeObjectURL(activeBlobUrlRef.current);
+      activeBlobUrlRef.current = null;
+    }
+    setIsPlayingAudio(false);
+    setCurrentSpeakingId(null);
+    setIsAudioLoading(false);
+    setAudioLoadingMsgId(null);
+  };
 
-    if (isSpeaking && currentSpeakingId === msgId) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      setCurrentSpeakingId(null);
+  // Playback Neural Speech via /api/tts (Edge-TTS pt-BR-AntonioNeural & pt-BR-FranciscaNeural)
+  const handlePlayNeuralAudio = async (text: string, msgId: string) => {
+    // If already playing this message, stop
+    if (isPlayingAudio && currentSpeakingId === msgId) {
+      stopNeuralAudio();
       return;
     }
 
-    window.speechSynthesis.cancel();
-    // Clean markdown symbols for cleaner speech
-    const cleanText = text.replace(/[*_#`[\]()]/g, "");
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = "pt-BR";
-    utterance.rate = 1.05;
+    stopNeuralAudio();
 
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-      setCurrentSpeakingId(msgId);
-    };
+    setIsAudioLoading(true);
+    setAudioLoadingMsgId(msgId);
 
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      setCurrentSpeakingId(null);
-    };
+    try {
+      // Determine voice to use:
+      let chosenVoice: string | undefined = undefined;
+      if (selectedVoice === "pt-BR-AntonioNeural" || selectedVoice === "pt-BR-FranciscaNeural") {
+        chosenVoice = selectedVoice;
+      } else {
+        // Auto mode based on sector/profile
+        const target = `${tenant?.aiSettings?.mainProfile || ""} ${user?.sector || ""}`.toLowerCase();
+        if (target.includes("varejo") || target.includes("atendimento") || target.includes("comercial") || target.includes("sac")) {
+          chosenVoice = "pt-BR-FranciscaNeural";
+        } else {
+          chosenVoice = "pt-BR-AntonioNeural";
+        }
+      }
 
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      setCurrentSpeakingId(null);
-    };
+      const blobUrl = await getNeuralSpeechAudioUrl({
+        text,
+        voice: chosenVoice,
+        sector: user?.sector,
+        profile: tenant?.aiSettings?.mainProfile,
+        token: token || undefined,
+      });
 
-    window.speechSynthesis.speak(utterance);
+      activeBlobUrlRef.current = blobUrl;
+      const audio = new Audio(blobUrl);
+      audioPlayerRef.current = audio;
+
+      audio.onplay = () => {
+        setIsPlayingAudio(true);
+        setCurrentSpeakingId(msgId);
+        setIsAudioLoading(false);
+        setAudioLoadingMsgId(null);
+      };
+
+      audio.onended = () => {
+        setIsPlayingAudio(false);
+        setCurrentSpeakingId(null);
+        if (activeBlobUrlRef.current) {
+          URL.revokeObjectURL(activeBlobUrlRef.current);
+          activeBlobUrlRef.current = null;
+        }
+      };
+
+      audio.onerror = (e) => {
+        console.error("Neural audio playback error:", e);
+        stopNeuralAudio();
+      };
+
+      await audio.play();
+    } catch (err: any) {
+      console.error("Neural TTS request failed:", err);
+      stopNeuralAudio();
+    }
   };
+
+  // Cleanup audio player on unmount
+  useEffect(() => {
+    return () => {
+      stopNeuralAudio();
+    };
+  }, []);
 
   // Send Chat Message to OpenJarvis Backend via API Service layer
   const handleSendMessage = async (e?: React.FormEvent) => {
@@ -507,6 +577,11 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
           // Save final full response to LocalStorage
           const finalizedMsgs = [...newMsgsWithUser, { ...assistantMsgObj, text: fullResponseText }];
           localStorage.setItem(storageKey, JSON.stringify(finalizedMsgs));
+
+          // Auto-play neural voice if enabled by user
+          if (autoPlayAudio) {
+            handlePlayNeuralAudio(fullResponseText, msgId);
+          }
         }
         setMessages((prev) =>
           prev.map((m) =>
@@ -736,6 +811,140 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
             className="hidden"
           />
 
+          {/* Neural Voice Settings Menu */}
+          <div className="relative">
+            <button
+              id="btn-neural-voice-menu"
+              type="button"
+              onClick={() => setShowAudioMenu(!showAudioMenu)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors cursor-pointer",
+                showAudioMenu || autoPlayAudio
+                  ? "bg-purple-50 dark:bg-purple-950/40 border-purple-500/40 text-purple-700 dark:text-purple-300 shadow-xs"
+                  : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200"
+              )}
+              title="Configurar Voz Neural (Edge-TTS: Antônio & Francisca)"
+            >
+              <Volume2 className="w-3.5 h-3.5 text-purple-500" />
+              <span className="hidden sm:inline">
+                {selectedVoice === "pt-BR-AntonioNeural"
+                  ? "Voz: Antônio"
+                  : selectedVoice === "pt-BR-FranciscaNeural"
+                  ? "Voz: Francisca"
+                  : "Voz Neural"}
+              </span>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
+            </button>
+
+            {showAudioMenu && (
+              <div
+                id="menu-neural-voice-settings"
+                className="absolute right-0 top-full mt-2 w-64 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-50 animate-in fade-in zoom-in-95 text-xs space-y-3"
+              >
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                  <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Volume2 className="w-4 h-4 text-purple-500" />
+                    Síntese Neural (Edge-TTS)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAudioMenu(false)}
+                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                    Voz do Assistente:
+                  </label>
+                  <div className="space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedVoice("auto");
+                        localStorage.setItem("omnijarvis_neural_voice", "auto");
+                      }}
+                      className={cn(
+                        "w-full text-left px-2.5 py-1.5 rounded-lg border text-xs flex items-center justify-between transition-all cursor-pointer",
+                        selectedVoice === "auto"
+                          ? "bg-purple-50 dark:bg-purple-950/50 border-purple-500 text-purple-700 dark:text-purple-300 font-semibold"
+                          : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                      )}
+                    >
+                      <div>
+                        <div className="font-medium">⚡ Automático (Setor)</div>
+                        <div className="text-[10px] text-slate-400">Seleciona por departamento</div>
+                      </div>
+                      {selectedVoice === "auto" && <Check className="w-3.5 h-3.5 text-purple-600" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedVoice("pt-BR-AntonioNeural");
+                        localStorage.setItem("omnijarvis_neural_voice", "pt-BR-AntonioNeural");
+                      }}
+                      className={cn(
+                        "w-full text-left px-2.5 py-1.5 rounded-lg border text-xs flex items-center justify-between transition-all cursor-pointer",
+                        selectedVoice === "pt-BR-AntonioNeural"
+                          ? "bg-purple-50 dark:bg-purple-950/50 border-purple-500 text-purple-700 dark:text-purple-300 font-semibold"
+                          : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                      )}
+                    >
+                      <div>
+                        <div className="font-medium">👔 Antônio Neural</div>
+                        <div className="text-[10px] text-slate-400">Tom corporativo / jurídico</div>
+                      </div>
+                      {selectedVoice === "pt-BR-AntonioNeural" && <Check className="w-3.5 h-3.5 text-purple-600" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedVoice("pt-BR-FranciscaNeural");
+                        localStorage.setItem("omnijarvis_neural_voice", "pt-BR-FranciscaNeural");
+                      }}
+                      className={cn(
+                        "w-full text-left px-2.5 py-1.5 rounded-lg border text-xs flex items-center justify-between transition-all cursor-pointer",
+                        selectedVoice === "pt-BR-FranciscaNeural"
+                          ? "bg-purple-50 dark:bg-purple-950/50 border-purple-500 text-purple-700 dark:text-purple-300 font-semibold"
+                          : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                      )}
+                    >
+                      <div>
+                        <div className="font-medium">🛍️ Francisca Neural</div>
+                        <div className="text-[10px] text-slate-400">Tom acolhedor / atendimento</div>
+                      </div>
+                      {selectedVoice === "pt-BR-FranciscaNeural" && <Check className="w-3.5 h-3.5 text-purple-600" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-slate-700 dark:text-slate-300 font-medium text-[11px]">
+                      Áudio Automático
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={autoPlayAudio}
+                      onChange={(e) => {
+                        setAutoPlayAudio(e.target.checked);
+                        localStorage.setItem("omnijarvis_auto_play_audio", String(e.target.checked));
+                      }}
+                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 w-4 h-4 cursor-pointer"
+                    />
+                  </label>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Reproduz o áudio neural automaticamente após cada resposta gerada.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Clear chat */}
           <button
             id="btn-clear-chat"
@@ -943,15 +1152,30 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
                     {!isUser && (
                       <div className="flex items-center gap-2">
-                        {/* TTS Play/Stop */}
+                        {/* Neural TTS Play / Stop / Loading */}
                         <button
-                          onClick={() => speakText(msg.text, msg.id)}
-                          className="hover:text-blue-500 transition-colors flex items-center gap-1 cursor-pointer"
-                          title="Ouvir resposta (TTS)"
+                          id={`btn-tts-neural-${msg.id}`}
+                          type="button"
+                          onClick={() => handlePlayNeuralAudio(msg.text, msg.id)}
+                          disabled={isAudioLoading && audioLoadingMsgId === msg.id}
+                          className={cn(
+                            "transition-colors flex items-center gap-1 cursor-pointer",
+                            isPlayingAudio && currentSpeakingId === msg.id
+                              ? "text-rose-500 font-semibold animate-pulse"
+                              : isAudioLoading && audioLoadingMsgId === msg.id
+                              ? "text-purple-500 font-medium"
+                              : "text-slate-400 hover:text-purple-500"
+                          )}
+                          title="Ouvir resposta com Voz Neural (Edge-TTS)"
                         >
-                          {isSpeaking && currentSpeakingId === msg.id ? (
+                          {isAudioLoading && audioLoadingMsgId === msg.id ? (
                             <>
-                              <VolumeX className="w-3 h-3 text-rose-500 animate-pulse" />
+                              <Loader2 className="w-3 h-3 animate-spin text-purple-500" />
+                              <span className="text-[11px] text-purple-500">Gerando...</span>
+                            </>
+                          ) : isPlayingAudio && currentSpeakingId === msg.id ? (
+                            <>
+                              <VolumeX className="w-3 h-3 text-rose-500" />
                               <span className="text-rose-500">Parar</span>
                             </>
                           ) : (

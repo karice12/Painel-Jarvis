@@ -1695,6 +1695,92 @@ Estou pronto para analisar documentos da nossa base de conhecimento, agendar com
   });
 });
 
+// 4.5 Neural Text-to-Speech (Edge-TTS pt-BR-AntonioNeural & pt-BR-FranciscaNeural)
+function sanitizeTextForSpeech(raw: string): string {
+  if (!raw) return "";
+  let clean = raw;
+  // Remove event/json codeblocks
+  clean = clean.replace(/```[\s\S]*?```/g, "");
+  // Remove inline code
+  clean = clean.replace(/`([^`]+)`/g, "$1");
+  // Remove markdown images
+  clean = clean.replace(/!\[[^\]]*\]\([^\)]*\)/g, "");
+  // Remove markdown links keeping text
+  clean = clean.replace(/\[([^\]]+)\]\([^\)]*\)/g, "$1");
+  // Remove markdown tables (| header | header |)
+  clean = clean.replace(/\|[^\n]+\|/g, " ");
+  // Remove headers
+  clean = clean.replace(/^#{1,6}\s+/gm, "");
+  // Remove blockquotes
+  clean = clean.replace(/^>\s+/gm, "");
+  // Remove bullet points
+  clean = clean.replace(/^[\s*•\-–—]+|\d+\.\s+/gm, "");
+  // Remove bold & italics markers
+  clean = clean.replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1");
+  clean = clean.replace(/[*_]/g, "");
+  // Remove URLs
+  clean = clean.replace(/https?:\/\/\S+/g, "");
+  // Remove emojis
+  clean = clean.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}]/gu, "");
+  // Clean multiple spaces and newlines
+  clean = clean.replace(/\s+/g, " ").trim();
+  
+  // Truncate to reasonable length (e.g. 1500 chars) for snappy playback
+  if (clean.length > 1500) {
+    clean = clean.slice(0, 1500);
+    const lastPunct = Math.max(clean.lastIndexOf("."), clean.lastIndexOf("!"), clean.lastIndexOf("?"));
+    if (lastPunct > 400) {
+      clean = clean.slice(0, lastPunct + 1);
+    }
+  }
+  return clean;
+}
+
+app.all("/api/tts", async (req, res) => {
+  try {
+    const rawText = (req.method === "POST" ? req.body.text : req.query.text) || "";
+    const requestedVoice = (req.method === "POST" ? req.body.voice : req.query.voice) || "";
+    const sector = (req.method === "POST" ? req.body.sector : req.query.sector) || "";
+    const profile = (req.method === "POST" ? req.body.profile : req.query.profile) || "";
+
+    const textToSpeak = sanitizeTextForSpeech(rawText) || "Olá, tudo bem? Estou à disposição para ajudar.";
+
+    // Select neural voice:
+    // pt-BR-AntonioNeural: Corporativo, Jurídico, Contabilidade, Executivo
+    // pt-BR-FranciscaNeural: Varejo, Atendimento, SAC, Acolhedor
+    let selectedVoice = "pt-BR-AntonioNeural";
+    const checkTarget = `${requestedVoice} ${sector} ${profile}`.toLowerCase();
+    if (
+      requestedVoice.includes("Francisca") ||
+      requestedVoice.includes("francisca") ||
+      checkTarget.includes("varejo") ||
+      checkTarget.includes("atendimento") ||
+      checkTarget.includes("comercial") ||
+      checkTarget.includes("sac")
+    ) {
+      selectedVoice = "pt-BR-FranciscaNeural";
+    } else if (requestedVoice && requestedVoice.startsWith("pt-BR-")) {
+      selectedVoice = requestedVoice;
+    }
+
+    const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(textToSpeak);
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("X-Voice-Used", selectedVoice);
+
+    audioStream.pipe(res);
+  } catch (err: any) {
+    console.error("[TTS Generation Error]:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Falha ao sintetizar áudio neural", details: err?.message });
+    }
+  }
+});
+
 // 5.0 AI Chat History Endpoints
 app.get("/api/ai/history", (req, res) => {
   const { tenantId, userId } = req.query;

@@ -255,3 +255,38 @@ export async function sendChatMessage(params: SendChatMessageParams): Promise<Ch
     throw new Error(errorMsg);
   }
 }
+
+/**
+ * Sintetiza texto em áudio neural MP3 fluido via backend (/api/tts) com Edge-TTS
+ * Retorna uma URL de objeto Blob (blob:http...) pronta para reprodução em HTML5 <audio>
+ */
+export async function getNeuralSpeechAudioUrl(params: {
+  text: string;
+  voice?: string;
+  sector?: string;
+  profile?: string;
+  token?: string;
+}): Promise<string> {
+  const response = await fetch("/api/tts", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(params.token ? { Authorization: `Bearer ${params.token}` } : {}),
+    },
+    body: JSON.stringify({
+      text: params.text,
+      voice: params.voice,
+      sector: params.sector,
+      profile: params.profile,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `Erro ao gerar voz neural: HTTP ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+}
+
