@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { OpenJarvisMessage, RagCitation, WebSearchQuotaInfo } from "../../types";
-import { cn, sanitizeInput, sanitizeMarkdownForTTS } from "../../lib/utils";
+import { cn, sanitizeInput, sanitizeMarkdownForTTS, cleanHtmlAndExtractText } from "../../lib/utils";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getWebSearchQuota, sendChatMessage, getAiUsageStatus, getNeuralSpeechAudioUrl } from "../../services/api";
 import { getAiChatHistoryFromDb, saveAiChatMessageToDb } from "../../services/supabaseDb";
@@ -1749,7 +1749,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                                         title={source.url}
                                       >
                                         <ExternalLink className="w-3.5 h-3.5 flex-shrink-0 text-indigo-500" />
-                                        <span className="truncate">{source.title || source.url}</span>
+                                        <span className="truncate">{cleanHtmlAndExtractText(source.title) || source.url}</span>
                                       </a>
                                       {source.publishedDate && (
                                         <span className="text-[10px] text-slate-400 font-medium">
@@ -1769,7 +1769,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
                                     </a>
 
                                     <p className="text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-slate-900/70 p-2 rounded-lg border border-indigo-100/60 dark:border-indigo-950/60 leading-relaxed italic">
-                                      "{source.snippet}"
+                                      "{cleanHtmlAndExtractText(source.snippet)}"
                                     </p>
                                   </div>
                                 ))}

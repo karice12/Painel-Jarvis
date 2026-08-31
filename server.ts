@@ -760,43 +760,57 @@ DIRETRIZES DO PERFIL: GERAL & MULTISSETORIAL (TEMPERATURA 0.3)
     return false;
   }
 
-  function decodeHtmlEntities(str: string): string {
-    if (!str) return "";
-    return str
-      .replace(/&quot;/g, '"')
-      .replace(/&apos;/g, "'")
-      .replace(/&#39;/g, "'")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec));
-  }
+  function cleanHtmlAndExtractText(raw: string): string {
+    if (!raw || typeof raw !== "string") return "";
+    let text = raw;
 
-  function stripHtmlTags(str: string): string {
-    if (!str) return "";
-    const decoded = decodeHtmlEntities(str);
-    return decoded
-      .replace(/<[^>]*>/g, " ")
-      .replace(/&[a-z0-9#]+;/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
+    // 1. Remove CDATA
+    text = text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
 
-  function cleanWebSnippet(raw: string): string {
-    if (!raw) return "";
-    let clean = stripHtmlTags(raw);
-    clean = clean
+    // 2. Decode entities repeatedly (up to 4 passes)
+    for (let i = 0; i < 4; i++) {
+      text = text
+        .replace(/&quot;/gi, '"')
+        .replace(/&apos;/gi, "'")
+        .replace(/&#39;/gi, "'")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/&amp;/gi, "&")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
+        .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    }
+
+    // 3. Remove script, style, font, anchor tags, extracting inner text
+    text = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ");
+    text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ");
+
+    // 4. Remove all HTML tags
+    text = text.replace(/<[^>]+>/g, " ");
+
+    // 5. Remove leftover HTML tag fragments, attributes and URLs
+    text = text
+      .replace(/(?:target=["']?[^"'\s>]*["']?|href=["']?[^"'\s>]*["']?|class=["']?[^"'\s>]*["']?)/gi, " ")
+      .replace(/(?:&lt;|&gt;|&amp;|&quot;|&#39;|&nbsp;|<|>)/gi, " ")
+      .replace(/https?:\/\/\S+/g, " ");
+
+    // 6. Clean cookie notices & subscriptions
+    text = text
       .replace(/(?:este site|o portal|nosso site|nós)?\s*(?:utiliza|utilizamos|usa|usamos)\s+cookies(?:\s+para\s+melhorar\s+sua\s+experi[eê]ncia)?[^.]*\.?/gi, "")
       .replace(/Ao\s+continuar\s+navegando,\s+voc[eê]\s+concorda\s+com\s+(?:nossa|a)\s+Pol[ií]tica\s+de\s+Privacidade[^.]*\.?/gi, "")
       .replace(/Todos\s+os\s+direitos\s+reservados[^.]*\.?/gi, "")
       .replace(/Inscreva-se\s+no\s+canal[^.]*\.?/gi, "")
-      .replace(/Deixe\s+seu\s+like[^.]*\.?/gi, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    // Strip trailing truncated words, ellipsis or cutoffs
-    clean = clean.replace(/\s*\.{2,}\s*$/, "").trim();
-    return clean;
+      .replace(/Deixe\s+seu\s+like[^.]*\.?/gi, "");
+
+    // 7. Normalize spaces and strip trailing cutoffs/ellipsis
+    text = text.replace(/\s+/g, " ").trim();
+    text = text.replace(/(?:\s*\.{2,}|\s*…|\s*reg\.\.\.|\s*[a-zA-Z]{1,3}\.\.\.)\s*$/, "").trim();
+
+    return text;
+  }
+
+  function cleanWebSnippet(raw: string): string {
+    return cleanHtmlAndExtractText(raw);
   }
 
 // Comprehensive Multi-Source Real Web Search Fetcher
@@ -824,7 +838,7 @@ async function fetchRealWebSources(
         const data = (await res.json()) as any;
         for (const r of data.results || []) {
           const rawSnippet = r.content || r.snippet || "";
-          const rawTitle = r.title || r.url || "Fonte Web";
+          const rawTitle = cleanHtmlAndExtractText(r.title || r.url || "Fonte Web");
           const rawUrl = r.url || "";
           if (rawSnippet && !isJunkFilter(rawSnippet, rawTitle, rawUrl)) {
             const clean = cleanSnippetFn(rawSnippet);
@@ -864,18 +878,25 @@ async function fetchRealWebSources(
         const descMatch = /<description>([\s\S]*?)<\/description>/i.exec(itemContent);
 
         if (titleMatch && linkMatch) {
-          const rawTitle = stripHtmlTags(titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1")).trim();
+          const cleanTitle = cleanHtmlAndExtractText(titleMatch[1])
+            .replace(/\s*-\s*(?:G1|Folha|UOL|Estadão|CNN|Exame|Globo|Terra|Metrópoles|O Globo|BBC|Poder360|Valor Econômico|InfoMoney|Agência Brasil|Migalhas|ConJur)\s*$/i, "")
+            .trim();
           const rawLink = linkMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1").trim();
-          let rawDesc = descMatch
-            ? stripHtmlTags(descMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1")).trim()
-            : rawTitle;
-          const cleanedSnippet = cleanSnippetFn(rawDesc);
 
-          if (rawTitle && !sources.some((s) => s.title === rawTitle)) {
+          let snippet = "";
+          if (descMatch) {
+            snippet = cleanHtmlAndExtractText(descMatch[1]);
+          }
+          if (!snippet || snippet.length < 15 || snippet.toLowerCase() === cleanTitle.toLowerCase()) {
+            snippet = cleanTitle;
+          }
+          const cleanedSnippet = cleanSnippetFn(snippet);
+
+          if (cleanTitle && !sources.some((s) => s.title === cleanTitle)) {
             sources.push({
-              title: rawTitle,
+              title: cleanTitle,
               url: rawLink,
-              snippet: cleanedSnippet || rawTitle,
+              snippet: cleanedSnippet || cleanTitle,
               publishedDate: pubDateMatch
                 ? new Date(pubDateMatch[1]).toLocaleDateString("pt-BR")
                 : new Date().toLocaleDateString("pt-BR"),
@@ -1088,9 +1109,10 @@ async function fetchRealWebSources(
 
   let webSearchContext = "";
   if (webSearchUsed && webSearchSources.length > 0) {
-    webSearchContext = `\n\n--- RESULTADOS DA PESQUISA WEB EM TEMPO REAL (SEARXNG / PROJARVIS) ---\n` +
+    webSearchContext = `\n\n--- INFORMAÇÕES APURADAS NA PESQUISA WEB (SÍNTESE OBRIGATÓRIA) ---\n` +
+      `[DIRETRIZ DE ENGENHARIA: Compreenda os dados factuais abaixo e redija uma resposta autoral, direta e analítica. NUNCA cite tags HTML, links, URLs ou repita snippets brutos].\n\n` +
       webSearchSources
-        .map((s, idx) => `[Web Fonte ${idx + 1}: ${s.title}]\nURL: ${s.url}\nConteúdo: "${s.snippet}"`)
+        .map((s, idx) => `[Matéria/Fato ${idx + 1}: ${s.title}]\nFatos apurados: "${s.snippet}"`)
         .join("\n\n");
   }
 
@@ -1306,32 +1328,39 @@ ${webSearchContext}
   if (!ollamaSuccess) {
     const gemini = getGeminiClient();
     if (gemini) {
-      try {
-        const geminiHistory = history.slice(-6).map((h: any) => ({
-          role: h.sender === "user" ? "user" : "model",
-          parts: [{ text: h.text }],
-        }));
+      const modelsToTry = ["gemini-3.7-flash", "gemini-2.5-flash", "gemini-2.5-pro"];
+      for (const modelName of modelsToTry) {
+        try {
+          const geminiHistory = history.slice(-6).map((h: any) => ({
+            role: h.sender === "user" ? "user" : "model",
+            parts: [{ text: h.text }],
+          }));
 
-        const response = await gemini.models.generateContent({
-          model: "gemini-3.7-flash",
-          contents: [
-            ...geminiHistory,
-            {
-              role: "user",
-              parts: [{ text: `${systemInstruction}\n\n[Mensagem do Colaborador]: ${message}` }],
+          const response = await gemini.models.generateContent({
+            model: modelName,
+            contents: [
+              ...geminiHistory,
+              {
+                role: "user",
+                parts: [{ text: message }],
+              },
+            ],
+            config: {
+              systemInstruction: systemInstruction,
+              temperature: dynamicTemp,
+              maxOutputTokens: dynamicMaxTokens,
             },
-          ],
-          config: {
-            temperature: dynamicTemp,
-            maxOutputTokens: dynamicMaxTokens,
-          },
-        });
+          });
 
-        responseText = response.text || "";
-        tokensUsed = Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + 120;
-        engineUsed = "gemini_3.7_flash";
-      } catch (geminiErr: any) {
-        console.warn("[Gemini API Fallback]", geminiErr.message);
+          if (response.text && response.text.trim().length > 0) {
+            responseText = response.text.trim();
+            tokensUsed = Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + 120;
+            engineUsed = `gemini_${modelName.replace(/[\.-]/g, "_")}`;
+            break;
+          }
+        } catch (geminiErr: any) {
+          console.warn(`[Gemini API - ${modelName} warning]:`, geminiErr.message);
+        }
       }
     }
   }

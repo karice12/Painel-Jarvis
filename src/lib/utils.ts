@@ -99,3 +99,56 @@ export function sanitizeMarkdownForTTS(text: string): string {
   return clean;
 }
 
+/**
+ * Decodifica entidades HTML recursivamente, remove tags e limpa metadados e fragmentos de busca
+ */
+export function cleanHtmlAndExtractText(raw: string): string {
+  if (!raw || typeof raw !== "string") return "";
+  let text = raw;
+
+  // 1. Remove CDATA
+  text = text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
+
+  // 2. Decode entities repeatedly (up to 4 passes)
+  for (let i = 0; i < 4; i++) {
+    text = text
+      .replace(/&quot;/gi, '"')
+      .replace(/&apos;/gi, "'")
+      .replace(/&#39;/gi, "'")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&amp;/gi, "&")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  }
+
+  // 3. Remove script, style, font, anchor tags, and extract inner text
+  text = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ");
+  text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ");
+
+  // 4. Remove all HTML tags
+  text = text.replace(/<[^>]+>/g, " ");
+
+  // 5. Remove leftover HTML tag fragments and attributes
+  text = text
+    .replace(/(?:target=["']?[^"'\s>]*["']?|href=["']?[^"'\s>]*["']?|class=["']?[^"'\s>]*["']?)/gi, " ")
+    .replace(/(?:&lt;|&gt;|&amp;|&quot;|&#39;|&nbsp;|<|>)/gi, " ")
+    .replace(/https?:\/\/\S+/g, " ");
+
+  // 6. Clean cookie notices, subscriptions, social media noise
+  text = text
+    .replace(/(?:este site|o portal|nosso site|nós)?\s*(?:utiliza|utilizamos|usa|usamos)\s+cookies(?:\s+para\s+melhorar\s+sua\s+experi[eê]ncia)?[^.]*\.?/gi, "")
+    .replace(/Ao\s+continuar\s+navegando,\s+voc[eê]\s+concorda\s+com\s+(?:nossa|a)\s+Pol[ií]tica\s+de\s+Privacidade[^.]*\.?/gi, "")
+    .replace(/Todos\s+os\s+direitos\s+reservados[^.]*\.?/gi, "")
+    .replace(/Inscreva-se\s+no\s+canal[^.]*\.?/gi, "")
+    .replace(/Deixe\s+seu\s+like[^.]*\.?/gi, "");
+
+  // 7. Normalize whitespace and strip trailing cutoffs/ellipsis
+  text = text.replace(/\s+/g, " ").trim();
+  text = text.replace(/(?:\s*\.{2,}|\s*…|\s*reg\.\.\.|\s*[a-zA-Z]{1,3}\.\.\.)\s*$/, "").trim();
+
+  return text;
+}
+
+
