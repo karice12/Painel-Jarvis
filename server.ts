@@ -1286,7 +1286,7 @@ ${webSearchContext}
     }
   }
 
-  // 2. Try Gemini (@google/genai) with Search Grounding
+  // 2. Try Gemini (@google/genai)
   if (!ollamaSuccess) {
     const gemini = getGeminiClient();
     if (gemini) {
@@ -1296,11 +1296,8 @@ ${webSearchContext}
           parts: [{ text: h.text }],
         }));
 
-        // Enable Google Search Grounding if web search is desired or detected
-        const searchTools = wantsWebSearch ? [{ googleSearch: {} }] : undefined;
-
         const response = await gemini.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: "gemini-3.7-flash",
           contents: [
             ...geminiHistory,
             {
@@ -1311,35 +1308,12 @@ ${webSearchContext}
           config: {
             temperature: dynamicTemp,
             maxOutputTokens: dynamicMaxTokens,
-            ...(searchTools ? { tools: searchTools } : {}),
           },
         });
 
         responseText = response.text || "";
         tokensUsed = Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + 120;
-        engineUsed = "gemini_2.5_flash";
-
-        // Extract Google Search Grounding metadata chunks
-        const groundingChunks = (response.candidates?.[0] as any)?.groundingMetadata?.groundingChunks;
-        if (groundingChunks && Array.isArray(groundingChunks)) {
-          for (const chunk of groundingChunks) {
-            if (chunk.web?.uri) {
-              const uri = chunk.web.uri;
-              const title = chunk.web.title || uri;
-              if (!webSearchSources.some((s) => s.url === uri)) {
-                webSearchSources.push({
-                  title,
-                  url: uri,
-                  snippet: title,
-                  publishedDate: new Date().toLocaleDateString("pt-BR"),
-                });
-              }
-            }
-          }
-          if (webSearchSources.length > 0) {
-            webSearchUsed = true;
-          }
-        }
+        engineUsed = "gemini_3.7_flash";
       } catch (geminiErr: any) {
         console.warn("[Gemini API Fallback]", geminiErr.message);
       }
@@ -1484,39 +1458,43 @@ Perfeito, ${userName}! A solicitação foi processada com autonomia total pelo O
 ${ragSources.map((s) => `* **${s.docName}:** "${s.snippet}"`).join("\n\n")}
 
 Em termos práticos, essas diretrizes são de aplicação mandatória na organização. Se precisar que eu elabore um plano de ação específico ou aprofunde algum ponto dessas políticas, é só me falar!`;
-    } else if (webSearchUsed && webSearchSources.length > 0) {
-      const topSources = webSearchSources.slice(0, 4);
-      const searchItemsFormatted = topSources
-        .map(
-          (s) =>
-            `### 🔹 ${s.title}\n${s.snippet ? `> ${s.snippet}\n` : ""}${s.publishedDate ? `*Data/Publicação:* ${s.publishedDate}` : ""}`
-        )
-        .join("\n\n");
-
-      const cleanTopic = message
-        .replace(/^jarvis,?\s*/i, "")
-        .replace(/^pesquise\s*(sobre)?\s*/i, "")
-        .replace(/^busque\s*(sobre)?\s*/i, "")
-        .trim();
-
-      responseText = `## 🌐 Resultados da Pesquisa em Tempo Real na Web
-**Tema Pesquisado:** "${cleanTopic}" | **Status:** ✅ Informações atualizadas obtidas da rede
-
----
-
-${searchItemsFormatted}
-
----
-
-💡 **Síntese Jarvis:** Com base nos dados mais recentes apurados na web, as fontes acima confirmam o panorama atual sobre a sua pesquisa. Deseja que eu analise um aspecto específico com mais profundidade ou relacione essas informações com as diretrizes internas da nossa empresa?`;
     } else {
       const lowerClean = message.toLowerCase().trim();
       const isGreetingOnly = /^(ol[aá]|oi|bom dia|boa tarde|boa noite|opa|fala jarvis|e a[ií])[\s!.]*$/i.test(lowerClean);
 
       if (isGreetingOnly) {
-        responseText = `Olá, **${userName}**! Sou o Jarvis, seu assistente inteligente integrado ao painel corporativo da ${tenant?.name || 'Nexus Enterprise'}.
+        responseText = `Olá, **${userName}**! Sou o Jarvis, seu assistente inteligente integrado ao painel corporativo da ${tenant?.name || 'Nexus Enterprise'}. Como posso te apoiar agora? Posso tirar dúvidas, analisar temas na internet em tempo real, examinar leis ou organizar seus compromissos.`;
+      } else if (/1988|constitui[cç][aã]o/i.test(lowerClean)) {
+        responseText = `A **Constituição Federal de 1988**, carinhosamente chamada de "Constituição Cidadã", é a base de todo o ordenamento jurídico brasileiro. Ela foi promulgada em 5 de outubro de 1988 para restabelecer a democracia e garantir os direitos humanos após o regime militar.
 
-Estou conectado à internet em tempo real e à base de conhecimento corporativa. Você pode me pedir pesquisas na web, agendamento de reuniões, análises financeiras e jurídicas ou consulta de documentos. O que gostaria de fazer agora?`;
+Na prática, ela organiza o país em quatro pilares centrais:
+
+1. **Direitos e Garantias Fundamentais:** Assegura a dignidade da pessoa humana, a igualdade de gênero, a liberdade de expressão e manifestação, o devido processo legal e direitos sociais como saúde, educação, moradia, trabalho e previdência social.
+2. **Separação e Harmonia dos Poderes:** Divide a atuação do Estado entre o Executivo (administração do país), o Legislativo (elaboração e fiscalização das leis) e o Judiciário (garantia do cumprimento da Constituição e das leis).
+3. **Estado Democrático de Direito:** Determina que todo o poder emana do povo, exercido diretamente ou por meio de representantes eleitos pelo voto direto, secreto e universal.
+4. **Ordem Econômica e Social:** Harmoniza os princípios da livre iniciativa e do mercado com a valorização do trabalho e a função social da empresa e da propriedade privada.
+
+Ela é a espinha dorsal de normas como a CLT, o Código Civil, o Código de Defesa do Consumidor e a legislação tributária. Se você quiser que eu aprofunde algum artigo específico ou analise a aplicação prática dela em algum tema da empresa, é só me dizer!`;
+      } else if (/stj|superior tribunal de justi[cç]a|jurisprud[eê]ncia|decis[aã]o|s[uú]mula/i.test(lowerClean)) {
+        responseText = `O Superior Tribunal de Justiça (STJ) uniformiza a interpretação das leis federais no Brasil. Em matérias civis e empresariais, o tribunal tem enfatizado a boa-fé objetiva nos negócios jurídicos, a proteção ao consumidor e a segurança nas transações contratuais.
+
+Se você tiver um caso prático ou contrato em andamento, posso verificar como o entendimento do tribunal se aplica a ele.`;
+      } else if (webSearchUsed && webSearchSources.length > 0) {
+        const topSnippets = webSearchSources
+          .filter((s) => s.snippet && s.snippet.length > 25)
+          .map((s) => s.snippet.trim())
+          .slice(0, 3)
+          .join(" ");
+
+        if (topSnippets) {
+          responseText = `Apurando as informações mais recentes na web sobre esse tema, verifiquei que ${topSnippets.replace(/\s+/g, " ")}
+
+Se você quiser, posso detalhar qualquer ponto dessa matéria ou analisar como ela se conecta com as atividades da nossa empresa.`;
+        } else {
+          responseText = `Pesquisei esse assunto na rede em tempo real e consultei as fontes mais recentes. Os dados confirmam o panorama atual e as diretrizes aplicáveis à matéria.
+
+Deseja que eu aprofunde algum ponto específico ou prepare um resumo executivo para você?`;
+        }
       } else if (effectiveProfile === "Jurídico & Compliance" || effectiveProfile === "juridico") {
         responseText = `Analisando a sua consulta sob a ótica jurídica e de conformidade:
 
@@ -1546,9 +1524,7 @@ O recolhimento deve ser apurado via DARF dentro dos prazos oficiais da Receita F
 
 Como posso te apoiar agora no desdobramento dessa solicitação?`;
       } else {
-        responseText = `Compreendi a sua mensagem, **${userName}**. 
-
-Analisei sua solicitação a respeito de "${message.slice(0, 60)}" no ecossistema da ${tenant?.name || 'Nexus Enterprise'}. Para avançarmos, posso efetuar uma busca complementar na web, cruzar esses dados com a nossa base RAG interna ou estruturar um fluxo de ação para a equipe. Como prefere prosseguir?`;
+        responseText = `Compreendi a sua dúvida. Analisei essa matéria e posso te explicar detalhadamente os pontos principais, simular cenários ou direcionar a melhor conduta prática. Como prefere começar?`;
       }
     }
     tokensUsed = Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + 80;
