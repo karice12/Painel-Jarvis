@@ -301,7 +301,33 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
       await audio.play();
     } catch (err: any) {
-      console.error("Neural TTS request failed:", err);
+      console.warn("Neural TTS request failed, recorrendo à síntese do navegador como fallback:", err);
+      // Fallback gracioso para a síntese nativa do navegador
+      if ("speechSynthesis" in window) {
+        try {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(sanitizeMarkdownForTTS(text));
+          utterance.lang = "pt-BR";
+          utterance.rate = 1.05;
+          utterance.onstart = () => {
+            setIsPlayingAudio(true);
+            setCurrentSpeakingId(msgId);
+            setIsAudioLoading(false);
+            setAudioLoadingMsgId(null);
+          };
+          utterance.onend = () => {
+            setIsPlayingAudio(false);
+            setCurrentSpeakingId(null);
+          };
+          utterance.onerror = () => {
+            stopNeuralAudio();
+          };
+          window.speechSynthesis.speak(utterance);
+          return;
+        } catch (speechErr) {
+          console.error("Browser speech synthesis fallback error:", speechErr);
+        }
+      }
       stopNeuralAudio();
     }
   };

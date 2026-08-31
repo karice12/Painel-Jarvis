@@ -1695,7 +1695,10 @@ Estou pronto para analisar documentos da nossa base de conhecimento, agendar com
   });
 });
 
-// 4.5 Neural Text-to-Speech (Edge-TTS pt-BR-AntonioNeural & pt-BR-FranciscaNeural)
+// 4.5 Neural Text-to-Speech (node-edge-tts pt-BR-AntonioNeural & pt-BR-FranciscaNeural)
+import fs from "fs";
+import os from "os";
+
 function sanitizeTextForSpeech(raw: string): string {
   if (!raw || typeof raw !== "string") return "";
   let clean = raw;
@@ -1713,8 +1716,8 @@ function sanitizeTextForSpeech(raw: string): string {
   // 4. Remove URLs avulsas
   clean = clean.replace(/https?:\/\/\S+/g, "");
 
-  // 5. Remove marcações de formatação Markdown (*, #, _, ~, >, |, [, ], (, ), {, })
-  clean = clean.replace(/[\*#_~>|\[\]\(\)\{\}]/g, " ");
+  // 5. Remove marcações de formatação Markdown (*, #, _, ~, >, |, [, ], (, ), {, }) e aspas
+  clean = clean.replace(/[\*#_~>|\[\]\(\)\{\}\"\'\«\»\“”]/g, " ");
 
   // 6. Converte o símbolo & para ' e ' para fala natural e compatibilidade XML SSML
   clean = clean.replace(/\s*&\s*/g, " e ");
@@ -1741,45 +1744,71 @@ function sanitizeTextForSpeech(raw: string): string {
 }
 
 async function synthesizeNeuralAudioBuffer(text: string, voice: string): Promise<Buffer> {
-  const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
-  const tts = new MsEdgeTTS();
-  await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+  const clean = sanitizeTextForSpeech(text) || "Olá, tudo bem? Estou à disposição para ajudar.";
 
-  return new Promise<Buffer>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Timeout ao sintetizar áudio neural"));
-    }, 15000);
+  // Tentativa primária usando node-edge-tts
+  try {
+    const { EdgeTTS } = await import("node-edge-tts");
+    const tts = new EdgeTTS({
+      voice: voice,
+      lang: "pt-BR",
+      outputFormat: "audio-24khz-48kbitrate-mono-mp3",
+    });
 
-    try {
-      const { audioStream } = tts.toStream(text);
-      const chunks: Buffer[] = [];
-      audioStream.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
-      });
-      audioStream.on("end", () => {
-        clearTimeout(timeout);
-        const fullBuf = Buffer.concat(chunks);
-        resolve(fullBuf);
-      });
-      audioStream.on("error", (err: any) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-    } catch (err) {
-      clearTimeout(timeout);
-      reject(err);
+    const tmpPath = path.join(os.tmpdir(), `tts_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.mp3`);
+    await tts.ttsPromise(clean, tmpPath);
+    const buf = await fs.promises.readFile(tmpPath);
+    await fs.promises.unlink(tmpPath).catch(() => {});
+    if (buf && buf.length > 0) {
+      return buf;
     }
-  });
+  } catch (primaryErr) {
+    console.warn("[TTS Primary Error, tentando fallback msedge-tts]:", primaryErr);
+  }
+
+  // Tentativa secundária usando msedge-tts caso haja variação de rede
+  try {
+    const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+
+    return await new Promise<Buffer>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("Timeout ao sintetizar áudio neural"));
+      }, 15000);
+
+      try {
+        const { audioStream } = tts.toStream(clean);
+        const chunks: Buffer[] = [];
+        audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
+        audioStream.on("end", () => {
+          clearTimeout(timeout);
+          resolve(Buffer.concat(chunks));
+        });
+        audioStream.on("error", (err: any) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+      } catch (e) {
+        clearTimeout(timeout);
+        reject(e);
+      }
+    });
+  } catch (secondaryErr: any) {
+    throw new Error(`Falha na síntese de voz neural: ${secondaryErr?.message || "Erro desconhecido"}`);
+  }
 }
 
 app.all("/api/tts", async (req, res) => {
   try {
-    const rawText = (req.method === "POST" ? req.body.text : req.query.text) || "";
-    const requestedVoice = (req.method === "POST" ? req.body.voice : req.query.voice) || "";
-    const sector = (req.method === "POST" ? req.body.sector : req.query.sector) || "";
-    const profile = (req.method === "POST" ? req.body.profile : req.query.profile) || "";
+    const rawText = (req.method === "POST" ? req.body?.text : req.query?.text) || "";
+    const requestedVoice = (req.method === "POST" ? req.body?.voice : req.query?.voice) || "";
+    const sector = (req.method === "POST" ? req.body?.sector : req.query?.sector) || "";
+    const profile = (req.method === "POST" ? req.body?.profile : req.query?.profile) || "";
 
-    const textToSpeak = sanitizeTextForSpeech(rawText) || "Olá, tudo bem? Estou à disposição para ajudar.";
+    if (!rawText || typeof rawText !== "string" || !rawText.trim()) {
+      return res.status(400).json({ error: "Texto não fornecido para síntese" });
+    }
 
     // Seleção de voz neural:
     // pt-BR-AntonioNeural: Corporativo, Jurídico, Contabilidade, Executivo
@@ -1799,18 +1828,21 @@ app.all("/api/tts", async (req, res) => {
       selectedVoice = requestedVoice;
     }
 
-    const audioBuffer = await synthesizeNeuralAudioBuffer(textToSpeak, selectedVoice);
+    const audioBuffer = await synthesizeNeuralAudioBuffer(rawText, selectedVoice);
 
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Length", audioBuffer.length);
-    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Cache-Control", "no-cache");
     res.setHeader("X-Voice-Used", selectedVoice);
 
-    res.end(audioBuffer);
-  } catch (err: any) {
-    console.error("[TTS Generation Error]:", err);
+    return res.end(audioBuffer);
+  } catch (error: any) {
+    console.error("[TTS Server Route Error]:", error);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Falha ao sintetizar áudio neural", details: err?.message || String(err) });
+      return res.status(500).json({
+        error: error?.message || "Falha ao gerar áudio",
+        status: 500,
+      });
     }
   }
 });
