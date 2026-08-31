@@ -936,10 +936,10 @@ export const SettingsModule: React.FC = () => {
                         Diretrizes Ativas: Jurídico & Compliance (Temperatura: 0.1)
                       </div>
                       <p className="text-[11px] opacity-90">
-                        • <strong>Formato de Parecer Obrigatório:</strong> Toda resposta é estruturada em <em>Fatos, Base Legal, Jurisprudência e Conclusão</em>.
+                        • <strong>Tom Consultivo de Advogado Parceiro:</strong> Resposta direta e pragmática sem formato de petição formal, citando leis e artigos (CC, CPC, CLT, LGPD, CDC) com naturalidade.
                       </p>
                       <p className="text-[11px] opacity-90">
-                        • <strong>Citação Mandatória:</strong> É expressamente proibido responder sem citar artigos específicos de lei (CC, CPC, CLT, CF/88, LGPD).
+                        • <strong>Limpeza de Texto:</strong> Sem URLs no corpo da mensagem — fontes e links são exibidos no painel interativo.
                       </p>
                     </div>
                   )}
@@ -951,10 +951,10 @@ export const SettingsModule: React.FC = () => {
                         Diretrizes Ativas: Contabilidade & Finanças (Temperatura: 0.1)
                       </div>
                       <p className="text-[11px] opacity-90">
-                        • <strong>Cruzamento Regulatório:</strong> Confronta obrigatoriamente com normas da Receita Federal do Brasil (RFB) e pronunciamentos do CPC/IFRS.
+                        • <strong>Consultor Tributário Sênior:</strong> Explicações simples e claras, impacto financeiro prático e cruzamento com normas da RFB e CPC/IFRS.
                       </p>
                       <p className="text-[11px] opacity-90">
-                        • <strong>Alíquotas Oficiais:</strong> Aplicação e detalhamento de tabelas de impostos (ICMS, IPI, PIS, COFINS, IRPJ, CSLL, Simples Nacional).
+                        • <strong>Tabelas Numéricas:</strong> Uso de tabelas pontuais para alíquotas (PIS, COFINS, IRPJ, CSLL) e cálculos fiscais.
                       </p>
                     </div>
                   )}
@@ -966,10 +966,10 @@ export const SettingsModule: React.FC = () => {
                         Diretrizes Ativas: Varejo & Atendimento (Temperatura: 0.5)
                       </div>
                       <p className="text-[11px] opacity-90">
-                        • <strong>Tom Humanizado & Consultivo:</strong> Comunicação empática, acolhedora, comercial e focada na satisfação e conversão do cliente.
+                        • <strong>Tom Caloroso & Resolutivo:</strong> Foco em fechar negócios, encantamento do cliente e soluções ágeis para dúvidas do catálogo.
                       </p>
                       <p className="text-[11px] opacity-90">
-                        • <strong>Catálogo & CDC:</strong> Foco nas características de produtos e aplicação precisa de políticas de troca e devolução (Código de Defesa do Consumidor).
+                        • <strong>Aplicação Acolhedora do CDC:</strong> Políticas de troca, devolução e garantia aplicadas com clareza e sem atrito.
                       </p>
                     </div>
                   )}
@@ -981,7 +981,7 @@ export const SettingsModule: React.FC = () => {
                         Diretrizes Ativas: Perfil Geral & Multissetorial (Temperatura: 0.3)
                       </div>
                       <p className="text-[11px] opacity-90">
-                        • Assistente executivo flexível para demandas multidisciplinares, pesquisa em documentos RAG, resumos e sínteses corporativas balanceadas.
+                        • <strong>Executivo Direto ao Ponto:</strong> Resolução de problemas ágil, dinâmica e sem rodeios para demandas corporativas e operacionais.
                       </p>
                     </div>
                   )}

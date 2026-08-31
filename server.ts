@@ -643,43 +643,40 @@ app.post(["/api/ai/chat", "/api/gemini/chat", "/api/ollama/chat"], async (req, r
   if (effectiveProfile === "Jurídico & Compliance" || effectiveProfile === "juridico") {
     profileDirectives = `
 ====================================================================
-DIRETRIZES MANDATÓRIAS DO PERFIL: JURÍDICO & COMPLIANCE (TEMPERATURA 0.1)
+DIRETRIZES DO PERFIL: JURÍDICO & COMPLIANCE (TEMPERATURA 0.1)
 ====================================================================
-- VOCÊ ATUA COMO CONSULTOR JURÍDICO E AUDITOR DE COMPLIANCE CORPORATIVO.
-- FORMATO MANDATÓRIO DE PARECER: TODA resposta deve ser estruturada rigorosamente nas 4 seções:
-  1. 📋 **I. DOS FATOS / CONSULTA**: Breve contextualização e síntese fática da dúvida ou demanda.
-  2. ⚖️ **II. DA BASE LEGAL**: Indicação explícita, detalhada e fundamentada dos diplomas legais aplicáveis.
-  3. 🏛️ **III. DA JURISPRUDÊNCIA & DOUTRINA**: Entendimentos consolidados dos Tribunais Superiores (STF, STJ, TST, TRFs) e precedentes.
-  4. 📑 **IV. DA CONCLUSÃO & PARECER**: Parecer conclusivo, recomendações preventivas de mitigação de passivos e próximos passos.
-- REGRA INEGOCIÁVEL DE CITAÇÃO DE ARTIGOS DE LEI: É EXPRESSAMENTE PROIBIDO emitir respostas sem citar artigos, parágrafos, incisos ou súmulas de diplomas legais vigentes (ex.: Código Civil - CC, CPC, CLT, CF/88, LGPD - Lei 13.709/18, CDC, Leis Tributárias ou Especiais). Respostas sem citação de artigos são estritamente proibidas.`;
+- VOCÊ ATUA COMO UM ADVOGADO PARCEIRO SÊNIOR E CONSULTOR DE COMPLIANCE.
+- TOM DE CONVERSA CONSULTIVA E PRAGMÁTICA: Converse como um advogado parceiro explicando a situação de forma clara, estratégica e direta.
+- PROIBIÇÃO DE FORMATO ENGESSADO / PETIÇÃO: É PROIBIDO formatar a resposta como petição inicial ou parecer burocrático dividido em "I. Dos Fatos", "II. Da Base Legal", "III. Jurisprudência", a menos que o usuário peça expressamente uma minuta formal. Comece direto na solução da dúvida.
+- CITAÇÃO NATURAL DE ARTIGOS DE LEI: Dê a resposta prática primeiro e cite os artigos de lei pertinentes de forma fluida no texto da conversa (ex: "Segundo o Art. 18 do CDC...", "Conforme o Art. 186 do Código Civil...", "Com base no Art. 7º da LGPD...").
+- PROIBIDO ESCREVER URLs: Não inclua links markdown [http...] ou URLs brutas no texto. Cite apenas os nomes das leis, decretos, súmulas e tribunais.`;
   } else if (effectiveProfile === "Contabilidade & Finanças" || effectiveProfile === "contabilidade") {
     profileDirectives = `
 ====================================================================
-DIRETRIZES MANDATÓRIAS DO PERFIL: CONTABILIDADE & FINANÇAS (TEMPERATURA 0.1)
+DIRETRIZES DO PERFIL: CONTABILIDADE & FINANÇAS (TEMPERATURA 0.1)
 ====================================================================
-- VOCÊ ATUA COMO AUDITOR CONTÁBIL, CONSULTOR TRIBUTÁRIO E CONTROLLER FINANCEIRO CORPORATIVO.
-- CRUZAMENTO OBRIGATÓRIO COM NORMAS REGULATÓRIAS E TRIBUTÁRIAS:
-  1. Confrontar obrigatoriamente toda consulta com as Instruções Normativas (IN) e Soluções de Consulta (COSIT) da **Receita Federal do Brasil (RFB)**.
-  2. Aplicar e citar expressamente os Pronunciamentos Técnicos do **Comitê de Pronunciamentos Contábeis (CPC)** e normas internacionais **IFRS** (ex.: CPC 00, CPC 25, CPC 30, etc.).
-  3. Aplicar a Tabela Oficial de Alíquotas e Regimes de Tributação vigentes (Simples Nacional, Lucro Presumido, Lucro Real), detalhando os tributos incidentes (ICMS, IPI, ISS, PIS, COFINS, IRPJ, CSLL, encargos previdenciários e trabalhistas).
-- MEMÓRIA DE CÁLCULO E CONCILIAÇÃO: Forneça sempre detalhamento numérico das bases de cálculo, memórias de cálculo, obrigações acessórias (SPED, DCTF, EFD-Reinf, ECF) e cronogramas de recolhimento oficial (DARF/GPS/DAS).`;
+- VOCÊ ATUA COMO CONSULTOR TRIBUTÁRIO SÊNIOR E CONTROLLER FINANCEIRO CORPORATIVO.
+- TOM SIMPLES, CLARO E CONSULTIVO: Explique a regra de forma acessível e mostre imediatamente o impacto financeiro prático para a empresa.
+- CRUZAMENTO REGULATÓRIO NATURAL: Aplique e mencione as Instruções Normativas da Receita Federal (RFB), Soluções de Consulta COSIT e Pronunciamentos do CPC/IFRS de forma natural no decorrer do texto.
+- TABELAS E MEMÓRIA DE CÁLCULO: Utilize tabelas limpas apenas quando houver demonstração de cálculos numéricos, alíquotas (PIS, COFINS, IRPJ, CSLL, Simples Nacional, ICMS, ISS) ou comparativos de regimes tributários.
+- PROIBIDO ESCREVER URLs: Não coloque links nem URLs no texto; o sistema renderiza as fontes no painel visual.`;
   } else if (effectiveProfile === "Varejo & Atendimento" || effectiveProfile === "varejo") {
     profileDirectives = `
 ====================================================================
-DIRETRIZES MANDATÓRIAS DO PERFIL: VAREJO & ATENDIMENTO (TEMPERATURA 0.5)
+DIRETRIZES DO PERFIL: VAREJO & ATENDIMENTO (TEMPERATURA 0.5)
 ====================================================================
-- VOCÊ ATUA COMO ESPECIALISTA EM VAREJO, EXPERIÊNCIA DO CLIENTE (CX), SAC E OPERAÇÕES COMERCIAIS.
-- TOM DE VOZ: Adote tom acolhedor, amigável, empático, consultivo e focado no encantamento, retenção e satisfação do cliente.
-- CATÁLOGO, VENDAS E POLÍTICAS DE TROCA/DEVOLUÇÃO:
-  1. Apresentação atrativa e valorização dos itens do catálogo corporativo, diferenciais, benefícios, soluções de dúvidas e recomendações personalizadas.
-  2. Aplicação transparente, acolhedora e precisa das políticas de troca, devolução e garantia da empresa, alinhadas aos direitos do consumidor (**Código de Defesa do Consumidor - CDC - Lei 8.078/90**, ex.: prazo de 7 dias para arrependimento no e-commerce - art. 49, e 30/90 dias para vícios aparentes - art. 18).
-  3. Forneça scripts de atendimento práticos, resolutivos e humanizados para SAC, chat e pós-venda.`;
+- VOCÊ ATUA COMO ESPECIALISTA EM VAREJO, EXPERIÊNCIA DO CLIENTE (CX) E OPERAÇÕES COMERCIAIS.
+- TOM CALOROSO, DINÂMICO E RESOLUTIVO: Seja extremamente acolhedor, empático, ágil e focado em ajudar o cliente a fechar o negócio ou resolver o problema de imediato sem atrito.
+- CATÁLOGO E POLÍTICAS DE TROCA/DEVOLUÇÃO: Apresente soluções do catálogo com foco em benefícios e aplique as políticas de garantia e devolução do CDC (Art. 49 para 7 dias de arrependimento, Art. 18 para vícios) de forma transparente, acolhedora e resolutiva.
+- PROIBIDO ESCREVER URLs: Não coloque links ou URLs no corpo da mensagem.`;
   } else {
     profileDirectives = `
 ====================================================================
 DIRETRIZES DO PERFIL: GERAL & MULTISSETORIAL (TEMPERATURA 0.3)
 ====================================================================
-- Atuação como consultor executivo sênior e assistente corporativo versátil para análise de documentos, alinhamento estratégico, agenda e governança.`;
+- VOCÊ ATUA COMO ASSISTENTE EXECUTIVO SÊNIOR E CONSULTOR MULTIDISCIPLINAR.
+- TOM DIRETO AO PONTO, DINÂMICO E PRAGMÁTICO: Foco total em resolver o problema do usuário sem rodeios, burocracia ou formalismos artificiais.
+- PROIBIDO ESCREVER URLs: Não coloque links ou URLs no texto.`;
   }
 
   // Web Search Quota Evaluation & Real SearXNG Integration
@@ -847,31 +844,29 @@ ${auditsSnapshot.length > 0 ? auditsSnapshot.join("\n") : "• Sistema operando 
 `;
 
   const basePrompt = customSystemInstruction || `Você é o OpenJarvis, o motor de Inteligência Artificial Corporativa e Assistente Executivo Multissetorial de alto desempenho da empresa "${tenant?.name || 'Nexus Enterprise'}".
-Seu propósito é atuar como um consultor sênior especializado com total acesso autônomo ao sistema corporativo, fornecendo diagnósticos executivos, gestão de compromissos, envio de notificações internas e síntese estratégica para colaboradores (usuário atual: ${userName}, setor: ${userSector}, cargo: ${userRole}).
+Você atua como um especialista humano sênior conversando diretamente com o usuário no dia a dia, com total acesso autônomo aos dados corporativos (usuário atual: ${userName}, setor: ${userSector}, cargo: ${userRole}).
 
 ====================================================================
-1. ADAPTAÇÃO DINÂMICA DE NICHO E DOMÍNIO
+1. REGRAS MANDATÓRIAS DE TOM, PERSONA E FORMATAÇÃO
 ====================================================================
-- Identifique automaticamente o setor de atuação do usuário pelo contexto da conversa (ex: Jurídico, Financeiro, Saúde, Tecnologia, E-commerce, Engenharia, Recursos Humanos, Vendas, etc.) ou utilize o setor cadastrado no perfil corporativo (${userSector}).
-- Adote imediatamente a terminologia técnica, frameworks conceituais, metodologias consolidadas e melhores práticas correspondentes ao setor identificado.
-- Se o setor mudar ou a solicitação for interdisciplinar, realize a transição de domínio mantendo a coerência e precisão conceitual.
+- TOM CONSULTIVO E NATURAL: Converse com naturalidade, clareza, empatia e objetividade, como um consultor sênior em um diálogo de trabalho.
+- PROIBIÇÃO DE TÍTULOS ROBÓTICOS DE RELATÓRIO: É EXPRESSAMENTE PROIBIDO iniciar a resposta com títulos genéricos como "Relatório Executivo Analítico", "1. Resumo Executivo", "I. Dos Fatos", "Diagnóstico Técnico" ou similares. Inicie SEMPRE direto no assunto, de forma fluida.
+- LIMPEZA DE TEXTO (SEM URLs NO CORPO DA MENSAGEM):
+  * É EXPRESSAMENTE PROIBIDO escrever URLs brutas (ex: "https://..."), links markdown [Título](http...) ou marcadores como "*Referência:* [http...]" dentro do texto da mensagem.
+  * Cite apenas os nomes das leis, órgãos (ex: Receita Federal, STF, CDC, LGPD), documentos ou termos técnicos no texto.
+  * Todas as fontes e links de internet/RAG são apresentados EXCLUSIVAMENTE pelo componente visual "Fontes Consultadas" da interface.
 
 ====================================================================
-2. PADRÃO DE RESPOSTA E PROFUNDIDADE
+2. ADAPTAÇÃO DINÂMICA DE DOMÍNIO
 ====================================================================
-- NUNCA entregue respostas superficiais, listas rasas de tópicos ou frases genéricas.
-- Ao abordar qualquer problema ou solicitação:
-  * Apresente diagnósticos analíticos estruturados.
-  * Forneça planos de ação práticos, acionáveis e passo a passo.
-  * Detalhe impactos estratégicos, operacionais, financeiros ou regulatórios envolvidos.
-  * Inclua dados, métricas de referência (KPIs), estimativas de mercado ou boas práticas consolidadas.
-- Formate a resposta utilizando Markdown rico: títulos hierárquicos (## e ###), listas explicativas com termos em **negrito**, tabelas comparativas quando pertinente e caixas de destaque para insights críticos.
+- Identifique automaticamente o setor de atuação do usuário pelo contexto da conversa ou utilize o setor corporativo cadastrado (${userSector}).
+- Adote terminologia técnica precisa, boas práticas e pragmatismo para a realidade do negócio.
 
 ====================================================================
 3. GESTÃO TOTAL DA AGENDA CORPORATIVA & AUTONOMIA DE COMPROMISSOS
 ====================================================================
 - Você tem acesso total à agenda corporativa, podendo consultar reuniões e incluir novos compromissos automaticamente.
-- Ao agendar ou identificar reuniões, forneça a resposta analítica normal e inclua ao final o bloco JSON estruturado:
+- Ao agendar ou identificar reuniões, forneça a resposta natural e inclua ao final o bloco JSON estruturado:
 \`\`\`event_json
 {
   "title": "Título resumido e profissional do evento",
@@ -889,7 +884,6 @@ Seu propósito é atuar como um consultor sênior especializado com total acesso
 4. ENVIO AUTOMÁTICO DE MENSAGENS E NOTIFICAÇÕES INTERNAS A COLABORADORES
 ====================================================================
 - Você tem permissão para redigir e disparar mensagens internas no Chat Corporativo em nome do OpenJarvis para colaboradores (ex: Pelegrino Karol ou outros usuários).
-- Exemplo: Quando houver uma reunião agendada na agenda do colaborador (ex: reunião às 14:00 sobre ampliação e criação de novos projetos), você pode disparar a notificação diretamente para ele: "Olá [Nome]! Hoje você tem uma reunião marcada às [Horário] sobre [Assunto] com [Pessoas/Grupo]."
 - Para disparar uma mensagem direta ou notificação de canal, inclua ao final da resposta o bloco JSON estruturado:
 \`\`\`chat_notify_json
 {
@@ -901,15 +895,9 @@ Seu propósito é atuar como um consultor sênior especializado com total acesso
 \`\`\`
 
 ====================================================================
-5. DIAGNÓSTICO EXECUTIVO PARA O MASTER ADMIN (SAÚDE, PROJETOS, AGENDA E AUDITORIAS)
+5. DIAGNÓSTICO EXECUTIVO PARA O MASTER ADMIN
 ====================================================================
-- Quando o Master Admin ou a liderança executiva perguntar como está a **saúde da empresa**, **projetos**, **agenda** e **auditorias**, estruture um RELATÓRIO EXECUTIVO COMPLETO E APROFUNDADO contendo:
-  1. **🏥 Saúde Geral da Empresa & Infraestrutura**: Estado dos serviços, consumo de requisições do plano, armazenamento de storage em GB, cotas de IA ativas e latência.
-  2. **🚀 Status dos Projetos & Base de Conhecimento**: Documentos indexados no RAG por setor, volume de tokens corporativos, status das diretrizes estratégicas.
-  3. **📅 Agenda Executiva & Próximos Compromissos**: Visão consolidada das reuniões do dia/semana, participantes alocados (ex: reuniões com Pelegrino Karol, equipes técnicas), horários e pautas prioritárias.
-  4. **🛡️ Auditorias, Governança & Conformidade (LGPD/ISO27001)**: Resumo das trilhas de auditoria recentes (alterações de permissão, acessos críticos, uploads de documentos, consultas de IA) e conformidade regulatória.
-  5. **💡 Recomendações e Próximos Passos Estratégicos**: Ações imediatas sugeridas para otimizar a operação e a produtividade da organização.
-`;
+- Quando o Master Admin ou liderança perguntar como está a saúde da empresa, projetos, agenda e auditorias, apresente uma visão executiva direta, clara e prática com indicadores de infraestrutura, reuniões ativas, volumetria documental e recomendações acionáveis.`;
 
   const systemInstruction = `${basePrompt}
 
@@ -1174,110 +1162,68 @@ Perfeito, ${userName}! A solicitação foi processada com autonomia total pelo O
       };
       responseText = `${greeting}Analisei sua solicitação e executei a reserva na agenda corporativa:\n\n📅 **${suggestedEvent.title}**\n🗓️ **Data:** ${suggestedEvent.date}\n⏰ **Horário:** ${suggestedEvent.startTime} - ${suggestedEvent.endTime}\n👥 **Participantes:** ${suggestedEvent.participants.join(", ")}\n\nO compromisso já foi registrado no calendário oficial do Workspace.`;
     } else if (ragSources.length > 0) {
-      responseText = `## 📄 Diagnóstico & Análise de Conformidade Interna (${tenant?.name || 'Nexus Enterprise'})
+      responseText = `Consultei as diretrizes oficiais da nossa base interna e localizei as orientações aplicáveis ao setor de **${userSector}**:
 
-### 1. Resumo Executivo
-Com base na **Base de Conhecimento Corporativa**, foi realizada a recuperação e análise dos documentos oficiais indexados para o setor de **${userSector}**. As normas vigentes foram confrontadas com a sua solicitação.
+${ragSources.map((s) => `* **${s.docName}:** "${s.snippet}"`).join("\n\n")}
 
-### 2. Diretrizes & Dados Recuperados (RAG)
-${ragSources.map((s, idx) => `* **Fonte ${idx + 1}: ${s.docName}** (Setor: *${s.sector}* | Relevância: *${Math.round(s.similarity * 100)}%*)\n  > "${s.snippet}"`).join("\n\n")}
-
-### 3. Diagnóstico Técnico & Implicações Práticas
-- **Conformidade Operacional:** As práticas descritas nos documentos acima possuem aplicação mandatória no âmbito da organização.
-- **Governança & Segurança:** Todas as operações devem respeitar as diretrizes de controle de acesso, sigilo e LGPD/GDPR consolidadas nas políticas corporativas.
-
-### 4. Recomendações e Próximos Passos
-1. Adotar rigorosamente os parâmetros prescritos nas fontes citadas acima.
-2. Em caso de dúvidas específicas sobre exceções operacionais, alinhar previamente com a liderança do setor de **${userSector}**.
-3. Caso necessite de desdobramentos operacionais ou cálculos adicionais, informe os parâmetros específicos.`;
+Em termos práticos, essas diretrizes são de aplicação mandatória na organização. Se precisar que eu elabore um plano de ação específico ou aprofunde algum ponto dessas políticas, é só me falar!`;
     } else if (webSearchUsed && webSearchSources.length > 0) {
-      responseText = `## 🌐 Relatório Executivo Analítico de Inteligência de Mercado
+      responseText = `Pesquisei as informações mais recentes do mercado em tempo real. Veja os principais pontos identificados:
 
-### 1. Resumo Executivo
-Através da varredura em tempo real via **ProJarvis Web Intelligence**, sintetizamos as movimentações, consensos de mercado e dados mais recentes pertinentes à sua pesquisa.
+${webSearchSources.slice(0, 3).map((w) => `* **${w.title}:** ${w.snippet}`).join("\n\n")}
 
-### 2. Análise Detalhada & Contexto de Mercado
-${webSearchSources.slice(0, 4).map((w, idx) => `#### ${idx + 1}. ${w.title}
-${w.snippet}
-*Referência:* [${w.url}](${w.url})`).join("\n\n")}
-
-### 3. Implicações & Recomendações Estratégicas
-- **Impacto no Setor (${userSector}):** Os dados apontam para a necessidade de alinhamento com as melhores práticas de mercado e rápida adaptação estratégica.
-- **Plano de Ação Recomendado:**
-  1. Monitorar continuamente as atualizações do segmento e validar métricas de referência.
-  2. Implementar diagnósticos periódicos de eficiência e conformidade regulatória.
-  3. Mapear oportunidades de inovação baseadas nos padrões destacados nas fontes.
-
-### 4. Fontes Consultadas
-${webSearchSources.slice(0, 5).map((w, idx) => `* [${idx + 1}] **${w.title}** - \`${w.url}\``).join("\n")}`;
+Os dados indicam que o mercado vem priorizando maior eficiência operacional e adequação regulatória imediata. Quer que eu faça um comparativo mais detalhado focado no cenário da nossa empresa?`;
     } else {
       if (effectiveProfile === "Jurídico & Compliance" || effectiveProfile === "juridico") {
-        responseText = `## ⚖️ Parecer Jurídico & Compliance
-**Interessado:** ${userName} | **Setor:** ${userSector} | **Data:** ${todayIso}
+        responseText = `Analisando a sua consulta sob a ótica jurídica e de conformidade, a situação demanda atenção principalmente quanto à formalização documental e à gestão preventiva de riscos.
 
----
+Segundo o **Art. 421 e 422 do Código Civil**, as relações contratuais devem sempre observar os princípios da função social e da boa-fé objetiva. Além disso, de acordo com o **Art. 7º e 46 da LGPD (Lei nº 13.709/2018)**, qualquer tratamento de dados decorrente dessa operação precisa de base legal clara e medidas de segurança técnicas e administrativas comprovadas.
 
-### I. DOS FATOS / CONSULTA
-Diante da consulta formulada ("*${message}*"), realizamos a análise técnica de conformidade legal, governança corporativa e mitigação de passivos.
+Se houver relação de consumo envolvida, vale lembrar que o **Art. 18 do CDC** estabelece responsabilidade solidária por vícios do produto ou serviço.
 
-### II. DA BASE LEGAL
-- **Constituição da República Federativa do Brasil de 1988:** Art. 5º, incisos X, XXII e LXXIX (Garantias Fundamentais, Propriedade e Proteção de Dados Pessoais).
-- **Código Civil Brasileiro (Lei nº 10.406/2002):** Arts. 186 e 927 (Responsabilidade Civil), Art. 421 (Função Social do Contrato) e Art. 422 (Princípio da Boa-fé Objetiva).
-- **Código de Processo Civil (Lei nº 13.105/2015):** Art. 373 (Distribuição do Ônus da Prova e Validade Documental Eletrônica).
-- **Lei Geral de Proteção de Dados Pessoais (Lei nº 13.709/2018 - LGPD):** Arts. 6º (Princípios de Segurança e Transparência), 7º (Hipóteses de Tratamento) e 46 (Governança e Medidas Técnicas).
-
-### III. DA JURISPRUDÊNCIA & DOUTRINA
-Conforme entendimento pacificado pelos Tribunais Superiores (STF, STJ e TST), a adoção prévia de protocolos rígidos de auditoria, conformidade regulatória e documentação probatória afasta a presunção de má-fé e mitiga o risco de sanções administrativas ou indenizatórias.
-
-### IV. DA CONCLUSÃO & PARECER
-1. **Parecer Conclusivo Favorável sob Condicionantes:** A operação está respaldada pela legislação pátria, desde que observadas as formalidades documentais.
-2. **Mitigação de Riscos:** Manter registros rastreáveis em conformidade com o Art. 37 da LGPD e guarda de evidências contratuais.
-3. **Próximos Passos:** Submeter as minutas definitivas à rubrica do departamento jurídico antes da assinatura.`;
+Minha recomendação prática é mantermos o registro probatório formal de todas as tratativas para afastar qualquer alegação de má-fé ou passivo futuro. Deseja que eu elabore uma cláusula protetiva ou prepare uma minuta contratual com esses termos?`;
       } else if (effectiveProfile === "Contabilidade & Finanças" || effectiveProfile === "contabilidade") {
-        responseText = `## 📊 Relatório Técnico Contábil & Tributário
-**Solicitante:** ${userName} | **Setor:** ${userSector} | **Data:** ${todayIso}
+        responseText = `Avaliando a sua questão sob a perspectiva contábil e fiscal, o ponto central é o enquadramento correto da operação e o impacto nos tributos correntes.
 
----
+Conforme as diretrizes da **Instrução Normativa RFB nº 2.121/2022** e os pronunciamentos técnicos do **CPC 00 e CPC 30**, as receitas e obrigações devem ser reconhecidas pelo regime de competência, garantindo conciliação precisa com a escrituração digital.
 
-### 1. Cruzamento Regulatório & Normas da Receita Federal (RFB)
-- **Instruções Normativas da RFB:** Aplicação das diretrizes da **IN RFB nº 2.121/2022** (Consolidação do PIS/Pasep e da COFINS) e **IN RFB nº 1.700/2017** (Tributação do IRPJ e da CSLL).
-- **Pronunciamentos Técnicos Contábeis (CPC / IFRS):**
-  * **CPC 00 (R2):** Estrutura Conceitual para Relatório Financeiro (Reconhecimento de Ativos e Passivos).
-  * **CPC 25:** Provisões, Passivos Contingentes e Ativos Contingentes.
-  * **CPC 30 (R1):** Reconhecimento de Receitas e Mensuração de Resultados.
+| Tributo / Obrigação | Alíquota de Referência | Observação Prática |
+| :--- | :--- | :--- |
+| **PIS / COFINS** | 0,65% / 3,00% (Cumulativo) ou 1,65% / 7,60% (Não-Cumulativo) | Incidência direta sobre o faturamento |
+| **IRPJ & CSLL** | 15% + 10% adicional / 9% | Apuração trimestral ou anual |
+| **SPED Fiscal / EFD** | Obrigação Acessória | Transmissão digital tempestiva |
 
-### 2. Alíquotas Oficiais & Memória de Cálculo Aplicável
-- **Tributação Federal & Estadual de Referência:**
-  * **PIS/PASEP:** 0,65% (Regime Cumulativo) ou 1,65% (Regime Não-Cumulativo)
-  * **COFINS:** 3,00% (Regime Cumulativo) ou 7,60% (Regime Não-Cumulativo)
-  * **IRPJ:** 15,0% (+ Adicional de 10,0% sobre a parcela do lucro que exceder R$ 20.000,00/mês)
-  * **CSLL:** 9,0% sobre a base ajustada
-  * **ISS / ICMS:** 2,0% a 5,0% (ISS Municipal) / 17,0% a 20,5% (ICMS Estadual conforme UF de destino)
-
-### 3. Obrigações Acessórias & Cronograma de Recolhimento
-- **Escrituração Digital:** Transmissão tempestiva via SPED Fiscal (EFD ICMS/IPI) e SPED Contribuições.
-- **Guias de Recolhimento:** Emissão e conciliação via DARF / DAS dentro dos prazos oficiais da Receita Federal.`;
+O recolhimento deve ser apurado via DARF dentro dos prazos oficiais da Receita Federal para evitar encargos moratórios. Se você quiser, posso simular a memória de cálculo com os valores exatos da operação.`;
       } else if (effectiveProfile === "Varejo & Atendimento" || effectiveProfile === "varejo") {
-        responseText = `## 🛍️ Atendimento Consultivo & Varejo
-Olá, **${userName}**! É um prazer atender você hoje! ✨
+        responseText = `Olá, **${userName}**! Tudo bem? Estou aqui para ajudar você a resolver isso da forma mais rápida e acolhedora possível!
 
-Estou aqui para apoiar você e seus clientes com agilidade, empatia e conhecimento completo sobre nosso catálogo e procedimentos comerciais:
+Nosso foco é sempre garantir a satisfação total do cliente e facilitar o processo comercial:
+* **Soluções do Catálogo:** Temos itens de pronta entrega com garantia estendida e suporte dedicado.
+* **Política de Troca e Devolução:** Conforme o **Art. 49 do Código de Defesa do Consumidor (CDC)**, o cliente tem até 7 dias corridos para arrependimento em compras online, com reembolso integral imediato. Para qualquer defeito aparente, o prazo é de 30 a 90 dias conforme o **Art. 18 do CDC**.
+* **Logística Reversa Sem Custo:** O código de postagem é emitido de forma automatizada sem custo para o cliente.
 
-### 🌟 Destaques do Catálogo & Benefícios
-- Produtos corporativos e soluções de alta durabilidade com suporte técnico dedicado.
-- Condições comerciais diferenciadas, faturamento flexível e garantia estendida de satisfação.
-
-### 📦 Políticas Claras de Troca & Devolução (Código de Defesa do Consumidor - CDC)
-- **Direito de Arrependimento (Art. 49 do CDC):** Prazo de até **7 (sete) dias corridos** a contar do recebimento para compras fora do estabelecimento comercial (online/telefone), com estorno integral garantido.
-- **Garantia Legal por Vício (Art. 18 do CDC):** Prazo de **30 dias** para produtos não duráveis e **90 dias** para produtos duráveis.
-- **Logística Reversa Facilitada:** Envio de código de postagem sem custos para o cliente e acompanhamento em tempo real até a entrega da nova unidade ou reembolso.
-
-Como posso ajudar você com mais informações sobre nossos produtos ou pedidos agora? Conte comigo! 😊`;
+Como posso te apoiar agora para finalizarmos essa solicitação ou prepararmos o atendimento ao cliente?`;
       } else {
-        responseText = `${greeting}Sou o assistente inteligente corporativo **OpenJarvis v4.2** da ${tenant?.name || 'Nexus Enterprise'}.\n\nEstou à sua disposição para analisar documentos com RAG, agendar compromissos na agenda interna, notificar colaboradores ou fornecer diagnósticos executivos sobre a saúde da empresa para o Master Admin. Como posso ajudar você agora?`;
+        responseText = `Olá, **${userName}**! Sou o assistente corporativo da ${tenant?.name || 'Nexus Enterprise'}.
+
+Estou pronto para analisar documentos da nossa base de conhecimento, agendar compromissos na agenda interna, emitir diagnósticos operacionais ou notificar colaboradores da equipe. O que você precisa resolver hoje?`;
       }
     }
     tokensUsed = Math.floor(message.length / 3) + Math.floor(responseText.length / 3) + 80;
+  }
+
+  // Sanitize message text: remove raw URLs, markdown link URLs and redundant trailing sources blocks
+  if (responseText) {
+    // Replace markdown links [Text](http...) with just Text
+    responseText = responseText.replace(/\[([^\]]+)\]\((?:https?:\/\/[^\)]+)\)/g, "$1");
+    // Remove raw markdown reference lines like *Referência:* http... or *Fonte:* http...
+    responseText = responseText.replace(/(?:\*|_)?(?:Referência|Fonte|Link|URL|Source)s?(?:\*|_)?:\s*(?:https?:\/\/\S+|`https?:\/\/\S+`)/gi, "");
+    // Remove trailing "### Fontes Consultadas" or "## Fontes" sections as they are rendered in the UI component
+    responseText = responseText.replace(/(?:#{1,4}\s*(?:Fontes Consultadas|Fontes Pesquisadas|Referências|Links Úteis)[\s\S]*)$/i, "");
+    // Remove standalone raw URLs (http/https) from text
+    responseText = responseText.replace(/(https?:\/\/[^\s\)]+)/g, "");
+    // Clean up excessive blank lines
+    responseText = responseText.replace(/\n{3,}/g, "\n\n").trim();
   }
 
   // Check for event_json or json block in responseText
