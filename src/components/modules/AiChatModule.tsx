@@ -35,6 +35,9 @@ import {
   Scale,
   Calculator,
   ShoppingBag,
+  Headphones,
+  Radio,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { OpenJarvisMessage, RagCitation, WebSearchQuotaInfo } from "../../types";
@@ -70,6 +73,15 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
+
+  // Continuous Hands-Free Voice Dialog Mode State (Modo Diálogo por Voz Contínuo)
+  const [isVoiceDialogMode, setIsVoiceDialogMode] = useState<boolean>(false);
+  const [voiceDialogStatus, setVoiceDialogStatus] = useState<"idle" | "listening" | "processing" | "speaking">("idle");
+  const isVoiceDialogModeRef = useRef<boolean>(false);
+  const isGeneratingRef = useRef<boolean>(false);
+  const isPlayingAudioRef = useRef<boolean>(false);
+  const speechRecognitionRef = useRef<any>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Neural Voice (Edge-TTS) State
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -173,7 +185,157 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     loadHistory();
   }, [tenant?.id, user?.id]);
 
-  // Speech-to-Text (STT) using Web Speech API
+  // Sync refs with state to prevent stale closures in async audio & speech callbacks
+  useEffect(() => {
+    isVoiceDialogModeRef.current = isVoiceDialogMode;
+  }, [isVoiceDialogMode]);
+
+  useEffect(() => {
+    isGeneratingRef.current = isGenerating;
+  }, [isGenerating]);
+
+  useEffect(() => {
+    isPlayingAudioRef.current = isPlayingAudio;
+  }, [isPlayingAudio]);
+
+  // Stop active voice recognition
+  const stopVoiceRecognition = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.abort();
+      } catch {
+        // ignore
+      }
+      speechRecognitionRef.current = null;
+    }
+    setIsRecording(false);
+  }, []);
+
+  // Start continuous / hands-free speech recognition
+  const startVoiceRecognition = useCallback(() => {
+    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+      console.warn("Reconhecimento de voz não suportado pelo navegador.");
+      return;
+    }
+
+    if (isPlayingAudioRef.current || isGeneratingRef.current) {
+      return;
+    }
+
+    try {
+      stopVoiceRecognition();
+
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.lang = "pt-BR";
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+        if (isVoiceDialogModeRef.current) {
+          setVoiceDialogStatus("listening");
+        }
+      };
+
+      recognition.onresult = (event: any) => {
+        let fullTranscript = "";
+        for (let i = 0; i < event.results.length; i++) {
+          fullTranscript += event.results[i][0].transcript;
+        }
+
+        const trimmed = fullTranscript.trim();
+        if (trimmed) {
+          setInputPrompt(trimmed);
+
+          // Se estiver no Modo Diálogo por Voz Contínuo, dispara envio automático após pausa de 1.4s
+          if (isVoiceDialogModeRef.current) {
+            if (silenceTimerRef.current) {
+              clearTimeout(silenceTimerRef.current);
+            }
+            silenceTimerRef.current = setTimeout(() => {
+              if (
+                isVoiceDialogModeRef.current &&
+                trimmed.length > 1 &&
+                !isGeneratingRef.current &&
+                !isPlayingAudioRef.current
+              ) {
+                try {
+                  recognition.stop();
+                } catch {
+                  // ignore
+                }
+                setIsRecording(false);
+                setVoiceDialogStatus("processing");
+                handleSendMessage(undefined, trimmed);
+              }
+            }, 1400);
+          }
+        }
+      };
+
+      recognition.onerror = (e: any) => {
+        if (e.error === "no-speech") {
+          return;
+        }
+        if (!isVoiceDialogModeRef.current) {
+          setIsRecording(false);
+        }
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+        // Se estiver no modo diálogo contínuo e a IA não estiver falando nem gerando, reabre a escuta
+        if (
+          isVoiceDialogModeRef.current &&
+          !isPlayingAudioRef.current &&
+          !isGeneratingRef.current
+        ) {
+          setTimeout(() => {
+            if (
+              isVoiceDialogModeRef.current &&
+              !isPlayingAudioRef.current &&
+              !isGeneratingRef.current
+            ) {
+              startVoiceRecognition();
+            }
+          }, 450);
+        }
+      };
+
+      speechRecognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn("Erro ao iniciar reconhecimento de voz:", err);
+      setIsRecording(false);
+    }
+  }, [stopVoiceRecognition]);
+
+  // Toggle Continuous Hands-free Voice Dialog Mode
+  const toggleVoiceDialogMode = () => {
+    if (!isVoiceDialogMode) {
+      setIsVoiceDialogMode(true);
+      isVoiceDialogModeRef.current = true;
+      setAutoPlayAudio(true);
+      localStorage.setItem("omnijarvis_auto_play_audio", "true");
+      setVoiceDialogStatus("listening");
+      stopNeuralAudio();
+      startVoiceRecognition();
+    } else {
+      setIsVoiceDialogMode(false);
+      isVoiceDialogModeRef.current = false;
+      setVoiceDialogStatus("idle");
+      stopVoiceRecognition();
+      stopNeuralAudio();
+    }
+  };
+
+  // Speech-to-Text (STT) manual button
   const toggleRecording = () => {
     if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
       alert("Reconhecimento de voz não suportado pelo seu navegador atual.");
@@ -181,39 +343,11 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     }
 
     if (isRecording) {
-      setIsRecording(false);
+      stopVoiceRecognition();
       return;
     }
 
-    try {
-      const SpeechRecognition =
-        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      const recognition = new SpeechRecognition();
-      recognition.lang = "pt-BR";
-      recognition.interimResults = false;
-
-      recognition.onstart = () => {
-        setIsRecording(true);
-      };
-
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setInputPrompt((prev) => (prev ? `${prev} ${transcript}` : transcript));
-        setIsRecording(false);
-      };
-
-      recognition.onerror = () => {
-        setIsRecording(false);
-      };
-
-      recognition.onend = () => {
-        setIsRecording(false);
-      };
-
-      recognition.start();
-    } catch {
-      setIsRecording(false);
-    }
+    startVoiceRecognition();
   };
 
   // Stop Active Neural Audio Playback cleanly without firing false error events
@@ -241,6 +375,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     }
 
     setIsPlayingAudio(false);
+    isPlayingAudioRef.current = false;
     setCurrentSpeakingId(null);
     setIsAudioLoading(false);
     setAudioLoadingMsgId(null);
@@ -314,15 +449,32 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
       audio.onplay = () => {
         setIsPlayingAudio(true);
+        isPlayingAudioRef.current = true;
         setCurrentSpeakingId(msgId);
         setIsAudioLoading(false);
         setAudioLoadingMsgId(null);
+        if (isVoiceDialogModeRef.current) {
+          setVoiceDialogStatus("speaking");
+          // Pausa a escuta do microfone enquanto a IA fala a notícia/resposta
+          stopVoiceRecognition();
+        }
       };
 
       audio.onended = () => {
         setIsPlayingAudio(false);
+        isPlayingAudioRef.current = false;
         setCurrentSpeakingId(null);
         audioPlayerRef.current = null;
+
+        // Quando a IA termina de falar, volta o diálogo reabrindo o microfone automaticamente!
+        if (isVoiceDialogModeRef.current) {
+          setVoiceDialogStatus("listening");
+          setTimeout(() => {
+            if (isVoiceDialogModeRef.current && !isPlayingAudioRef.current && !isGeneratingRef.current) {
+              startVoiceRecognition();
+            }
+          }, 450);
+        }
       };
 
       audio.onerror = (e) => {
@@ -356,10 +508,11 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
     }
   };
 
-  // Cleanup audio player and cached blobs on unmount
+  // Cleanup audio player, cached blobs and speech recognition on unmount
   useEffect(() => {
     return () => {
       stopNeuralAudio();
+      stopVoiceRecognition();
       audioCacheRef.current.forEach((url) => {
         try {
           URL.revokeObjectURL(url);
@@ -369,18 +522,24 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       });
       audioCacheRef.current.clear();
     };
-  }, []);
+  }, [stopVoiceRecognition]);
 
   // Send Chat Message to OpenJarvis Backend via API Service layer
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent, overrideText?: string) => {
     if (e) e.preventDefault();
 
     // 1. Sanitization & spam prevention check
-    const rawInput = inputPrompt;
+    const rawInput = overrideText !== undefined ? overrideText : inputPrompt;
     const sanitizedText = sanitizeInput(rawInput);
 
-    if (!sanitizedText || isGenerating || isCheckingQuota) {
+    if (!sanitizedText || isGeneratingRef.current || isCheckingQuota) {
       return;
+    }
+
+    // Se estiver no Modo Diálogo por Voz, atualiza status para processando e pausa o microfone
+    if (isVoiceDialogModeRef.current) {
+      setVoiceDialogStatus("processing");
+      stopVoiceRecognition();
     }
 
     // Reset temporary prompt and alerts
@@ -464,6 +623,9 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
       // Restore user text in prompt
       setInputPrompt(rawInput);
+      if (isVoiceDialogModeRef.current) {
+        setVoiceDialogStatus("idle");
+      }
       return;
     }
 
@@ -475,13 +637,32 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       });
     }
 
+    // Detect if user is asking for news or web research to automatically engage Web Search
+    const lower = sanitizedText.toLowerCase();
+    const isNewsOrSearchIntent =
+      lower.includes("notícia") ||
+      lower.includes("noticia") ||
+      lower.includes("notícias") ||
+      lower.includes("noticias") ||
+      lower.includes("pesquise") ||
+      lower.includes("pesquisar") ||
+      lower.includes("procure na internet") ||
+      lower.includes("busque na web") ||
+      lower.includes("buscar na web") ||
+      lower.includes("últimas novidades") ||
+      lower.includes("ultimas novidades") ||
+      lower.includes("pesquisa sobre") ||
+      lower.includes("novidades de hoje");
+
+    const effectiveWebSearch = isWebSearchEnabled || isNewsOrSearchIntent;
+
     // 4. Proceed with message dispatch via src/services/api.ts
     const userMsg: OpenJarvisMessage = {
       id: `usr_${Date.now()}`,
       sender: "user",
       text: sanitizedText,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      isWebSearchEnabled,
+      isWebSearchEnabled: effectiveWebSearch,
     };
 
     const newMsgsWithUser = [...messages, userMsg];
@@ -503,7 +684,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         userId: user?.id || "usr_master_01",
         userName: user?.name || "Colaborador",
         userSector: user?.sector || "Geral",
-        webSearchUsed: isWebSearchEnabled,
+        webSearchUsed: effectiveWebSearch,
       }),
     }).catch(() => {});
 
@@ -515,7 +696,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       userId: user?.id,
       userName: user?.name,
       userSector: user?.sector,
-      webSearchUsed: isWebSearchEnabled,
+      webSearchUsed: effectiveWebSearch,
     }).catch((e) => console.warn("Supabase user msg save error:", e));
 
     try {
@@ -523,7 +704,7 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
         message: sanitizedText,
         history: messages.slice(-6),
         useKnowledgeBase,
-        isWebSearchEnabled,
+        isWebSearchEnabled: effectiveWebSearch,
         userSector: user?.sector || "Geral",
         userRole: user?.role || "user",
         userName: user?.name || "Colaborador",
@@ -642,8 +823,8 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
           const finalizedMsgs = [...newMsgsWithUser, { ...assistantMsgObj, text: fullResponseText }];
           localStorage.setItem(storageKey, JSON.stringify(finalizedMsgs));
 
-          // Auto-play neural voice if enabled by user
-          if (autoPlayAudio) {
+          // Auto-play neural voice if enabled by user or if voice dialog mode is active
+          if (autoPlayAudio || isVoiceDialogModeRef.current) {
             handlePlayNeuralAudio(fullResponseText, msgId);
           }
         }
@@ -655,6 +836,9 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
       }, 20);
     } catch (err: any) {
       setIsGenerating(false);
+      if (isVoiceDialogModeRef.current) {
+        setVoiceDialogStatus("idle");
+      }
       const errorMessage =
         err?.message ||
         "Desculpe, ocorreu uma instabilidade na conexão com o assistente inteligente. Por favor, tente novamente.";
@@ -804,6 +988,33 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
 
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Continuous Voice Dialog Mode Toggle (Modo Conversação Viva-Voz) */}
+          <button
+            id="btn-toggle-voice-dialog-mode"
+            type="button"
+            onClick={toggleVoiceDialogMode}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs",
+              isVoiceDialogMode
+                ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white ring-2 ring-purple-400/60 shadow-purple-500/20 animate-pulse"
+                : "bg-purple-50 dark:bg-purple-950/40 border border-purple-300 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/50"
+            )}
+            title="Ativar Modo Diálogo Contínuo por Voz (Você fala, a IA pesquisa e responde falando com voz humanizada automaticamente)"
+          >
+            <Headphones className={cn("w-3.5 h-3.5", isVoiceDialogMode && "animate-bounce")} />
+            <span>Modo Diálogo por Voz</span>
+            {isVoiceDialogMode ? (
+              <span className="flex items-center gap-1 text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                ON
+              </span>
+            ) : (
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-purple-200/60 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200">
+                Viva-voz
+              </span>
+            )}
+          </button>
+
           {/* ProJarvis Web Search Toggle (Client Toggle - NO API KEYS EXPOSED) */}
           <button
             id="btn-toggle-web-search"
@@ -1043,6 +1254,122 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
           </button>
         </div>
       </div>
+
+      {/* Continuous Hands-free Voice Dialog Active Banner */}
+      {isVoiceDialogMode && (
+        <div
+          id="banner-voice-dialog-active"
+          className={cn(
+            "mx-4 mt-3 mb-1 p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 shadow-md animate-in fade-in slide-in-from-top-2 text-xs",
+            voiceDialogStatus === "listening"
+              ? "bg-gradient-to-r from-purple-950/80 via-indigo-950/80 to-slate-900 border-purple-500/60 text-purple-100 shadow-purple-900/20"
+              : voiceDialogStatus === "processing"
+              ? "bg-gradient-to-r from-blue-950/80 via-indigo-950/80 to-slate-900 border-blue-500/60 text-blue-100 shadow-blue-900/20"
+              : voiceDialogStatus === "speaking"
+              ? "bg-gradient-to-r from-emerald-950/80 via-teal-950/80 to-slate-900 border-emerald-500/60 text-emerald-100 shadow-emerald-900/20"
+              : "bg-slate-900/90 border-slate-700 text-slate-200"
+          )}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "p-2.5 rounded-xl flex items-center justify-center flex-shrink-0",
+                voiceDialogStatus === "listening"
+                  ? "bg-purple-500/30 text-purple-300 ring-2 ring-purple-400/50"
+                  : voiceDialogStatus === "processing"
+                  ? "bg-blue-500/30 text-blue-300 ring-2 ring-blue-400/50"
+                  : voiceDialogStatus === "speaking"
+                  ? "bg-emerald-500/30 text-emerald-300 ring-2 ring-emerald-400/50"
+                  : "bg-slate-800 text-slate-300"
+              )}
+            >
+              {voiceDialogStatus === "listening" ? (
+                <Mic className="w-5 h-5 animate-pulse text-purple-400" />
+              ) : voiceDialogStatus === "processing" ? (
+                <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+              ) : voiceDialogStatus === "speaking" ? (
+                <Volume2 className="w-5 h-5 animate-bounce text-emerald-400" />
+              ) : (
+                <Headphones className="w-5 h-5 text-purple-400" />
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold uppercase tracking-wider text-[11px] text-white flex items-center gap-1.5">
+                  <Radio className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
+                  Modo Diálogo por Voz Ativo
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-slate-200 font-mono">
+                  Hands-Free
+                </span>
+              </div>
+
+              <div className="text-xs text-slate-200 mt-0.5 flex items-center gap-2">
+                {voiceDialogStatus === "listening" ? (
+                  <>
+                    <span className="font-medium text-purple-200">
+                      🎙️ Ouvindo você... Fale sua pergunta ou peça uma pesquisa de notícias
+                    </span>
+                    <span className="flex items-center gap-0.5">
+                      <span className="w-1 h-3 bg-purple-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                      <span className="w-1 h-4 bg-purple-300 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                      <span className="w-1 h-2 bg-purple-400 rounded-full animate-bounce" />
+                    </span>
+                  </>
+                ) : voiceDialogStatus === "processing" ? (
+                  <span className="font-medium text-blue-200">
+                    ⚡ OmniJarvis pesquisando informações e formulando resposta...
+                  </span>
+                ) : voiceDialogStatus === "speaking" ? (
+                  <>
+                    <span className="font-medium text-emerald-200">
+                      🔊 OmniJarvis respondendo com voz neural humanizada... (ao terminar, o microfone reabre automaticamente)
+                    </span>
+                    <span className="flex items-center gap-0.5">
+                      <span className="w-1 h-3 bg-emerald-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                      <span className="w-1 h-4 bg-emerald-300 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                      <span className="w-1 h-2 bg-emerald-400 rounded-full animate-bounce" />
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-slate-300">Pronto para conversar por voz.</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {voiceDialogStatus === "speaking" && (
+              <button
+                type="button"
+                onClick={() => {
+                  stopNeuralAudio();
+                  setVoiceDialogStatus("listening");
+                  setTimeout(() => {
+                    startVoiceRecognition();
+                  }, 400);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                title="Interromper áudio e voltar a falar"
+              >
+                <span>Pular e Falar</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={toggleVoiceDialogMode}
+              className="px-2.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+              title="Desativar Modo Diálogo por Voz"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Desligar Diálogo</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Web Search Quota Exceeded / Fallback Alert Banner */}
       {webSearchAlert && (
@@ -1607,23 +1934,50 @@ export const AiChatModule: React.FC<AiChatModuleProps> = ({ onAddEventToAgenda }
               )}
             />
 
-            {/* Mic & Send Buttons inside textarea */}
+            {/* Mic, Voice Dialog & Send Buttons inside textarea */}
             <div className="absolute right-3 flex items-center gap-1.5">
-              {/* STT Mic button */}
+              {/* Continuous Hands-free Voice Dialog Quick Button */}
+              <button
+                id="btn-quick-voice-dialog"
+                type="button"
+                disabled={isGenerating || isCheckingQuota}
+                onClick={toggleVoiceDialogMode}
+                className={cn(
+                  "p-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer",
+                  isVoiceDialogMode
+                    ? "bg-purple-600 text-white shadow-xs shadow-purple-500/50 animate-pulse"
+                    : "text-slate-400 hover:text-purple-600 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40"
+                )}
+                title={
+                  isVoiceDialogMode
+                    ? "Desativar Modo Diálogo Contínuo (Hands-free)"
+                    : "Ativar Modo Diálogo Contínuo (Você fala, a IA pesquisa e fala de volta)"
+                }
+              >
+                <Headphones className="w-4 h-4" />
+              </button>
+
+              {/* STT Mic button (Single turn) */}
               <button
                 id="btn-voice-stt"
                 type="button"
-                disabled={isGenerating || isCheckingQuota}
+                disabled={isGenerating || isCheckingQuota || isVoiceDialogMode}
                 onClick={toggleRecording}
                 className={cn(
                   "p-2 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer",
-                  isRecording
+                  isRecording && !isVoiceDialogMode
                     ? "bg-rose-500 text-white animate-pulse"
                     : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                 )}
-                title={isRecording ? "Parar gravação" : "Comando de voz (Microfone STT)"}
+                title={
+                  isVoiceDialogMode
+                    ? "Microfone gerenciado pelo Modo Diálogo Contínuo"
+                    : isRecording
+                    ? "Parar gravação"
+                    : "Gravação pontual de voz (Microfone STT)"
+                }
               >
-                {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                {isRecording && !isVoiceDialogMode ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </button>
 
               {/* Submit button with anti-spam / anti-bot protection */}
